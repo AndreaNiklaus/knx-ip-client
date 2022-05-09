@@ -4,7 +4,7 @@ use snafu::{Whatever, whatever};
 use std::io::{Cursor, Read};
 
 #[derive(Debug)]
-struct LDataCon {
+pub struct LDataCon {
     cemi: CEMI,
     l_data: LData,
     confirm: bool,
@@ -52,9 +52,20 @@ impl LDataCon {
 }
 
 #[derive(Debug)]
-struct LDataInd {
-    cemi: CEMI,
-    l_data: LData,
+pub struct LData {
+    src: u16,
+    dest: u16,
+    frame_type: bool,
+    repetition: bool,
+    system_broadcast: bool,
+    ack_request: bool,
+}
+
+#[derive(Debug)]
+pub struct LDataInd {
+    pub cemi: CEMI,
+    pub l_data: LData,
+    pub value: Vec<u8>,
 }
 
 impl LDataInd {
@@ -111,6 +122,7 @@ impl LDataInd {
                 system_broadcast,
                 ack_request,
             },
+            value,
         })
     }
 }
