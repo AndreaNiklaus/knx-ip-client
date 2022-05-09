@@ -109,6 +109,9 @@ impl UdpTransport {
                         if cemi.msg_code == CEMIMessageCode::LDataCon as u8 {
                             let data_con = LDataCon::from_cemi(cemi);
                             println!("Parsed cEMI {:?}", data_con);
+                        } else if cemi.msg_code == CEMIMessageCode::LDataInd as u8 {
+                            let data_ind = LDataInd::from_cemi(cemi);
+                            println!("Parsed cEMI {:?}", data_ind);
                         }
                     },
                     Err(e) => eprintln!("Error parsing cEMI response {:?}", e),

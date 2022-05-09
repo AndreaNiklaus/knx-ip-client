@@ -3,6 +3,118 @@ use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use snafu::{Whatever, whatever};
 use std::io::{Cursor, Read};
 
+#[derive(Debug)]
+struct LDataCon {
+    cemi: CEMI,
+    l_data: LData,
+    confirm: bool,
+}
+
+impl LDataCon {
+    pub fn from_cemi(cemi: CEMI) -> Result<Self, Whatever> {
+        let mut reader = Cursor::new(cemi.service_info.as_slice());
+        let control1 = match reader.read_u8() {
+            Ok(control1) => control1,
+            Err(e) => whatever!("Unable to read control 1 byte {:?}", e),
+        };
+        let control2 = match reader.read_u8() {
+            Ok(control2) => control2,
+            Err(e) => whatever!("Unable to read control 2 byte {:?}", e),
+        };
+        let src = match reader.read_u16::<BigEndian>() {
+            Ok(src) => src,
+            Err(e) => whatever!("Unable to read source address {:?}", e),
+        };
+        let dest = match reader.read_u16::<BigEndian>() {
+            Ok(dest) => dest,
+            Err(e) => whatever!("Unable to read destination address {:?}", e),
+        };
+
+        let frame_type = (control1 & 0x80) > 0;
+        let repetition = (control1 & (1 << 5)) > 0;
+        let system_broadcast = (control1 & (1 << 4)) > 0;
+        let ack_request = (control1 & (1 << 1)) > 0;
+        let confirm = (control1 & 1) == 0;
+
+        Ok(Self {
+            cemi,
+            l_data: LData {
+                src,
+                dest,
+                frame_type,
+                repetition,
+                system_broadcast,
+                ack_request,
+            },
+            confirm,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct LDataInd {
+    cemi: CEMI,
+    l_data: LData,
+}
+
+impl LDataInd {
+    pub fn from_cemi(cemi: CEMI) -> Result<Self, Whatever> {
+        let mut reader = Cursor::new(cemi.service_info.as_slice());
+        let control1 = match reader.read_u8() {
+            Ok(control1) => control1,
+            Err(e) => whatever!("Unable to read control 1 byte {:?}", e),
+        };
+        let control2 = match reader.read_u8() {
+            Ok(control2) => control2,
+            Err(e) => whatever!("Unable to read control 2 byte {:?}", e),
+        };
+        let src = match reader.read_u16::<BigEndian>() {
+            Ok(src) => src,
+            Err(e) => whatever!("Unable to read source address {:?}", e),
+        };
+        let dest = match reader.read_u16::<BigEndian>() {
+            Ok(dest) => dest,
+            Err(e) => whatever!("Unable to read destination address {:?}", e),
+        };
+        let length = match reader.read_u8() {
+            Ok(len) => len - 1,
+            Err(e) => whatever!("Unable to read length {:?}", e),
+        };
+        let octects_6_7 = match reader.read_u16::<BigEndian>() {
+            Ok(word) => word,
+            Err(e) => whatever!("Unable to read octets 6 and 7 {:?}", e),
+        };
+
+        let frame_type = (control1 & 0x80) > 0;
+        let repetition = (control1 & (1 << 5)) > 0;
+        let system_broadcast = (control1 & (1 << 4)) > 0;
+        let ack_request = (control1 & (1 << 1)) > 0;
+
+        let acpi = (octects_6_7 & 0x03c0) >> 6;
+        println!("Length {:?}", length);
+        println!("Octects 6 and 7: {:0x?}", octects_6_7);
+        println!("Apci: {:0x?}", acpi);
+
+        let mut value = vec![0; length as usize];
+        if let Err(e) = reader.read(&mut value) {
+            whatever!("Unable to read value of length {}, {:?}", length, e);
+        }
+        println!("Value: {:0x?}", value);
+
+        Ok(Self {
+            cemi,
+            l_data: LData {
+                src,
+                dest,
+                frame_type,
+                repetition,
+                system_broadcast,
+                ack_request,
+            },
+        })
+    }
+}
+
 // L_Data request message
 // 03.06.03 EMI IMI section 4.1.5.3.3
 #[derive(Debug)]
