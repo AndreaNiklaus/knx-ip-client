@@ -7,9 +7,9 @@ use std::io::{Cursor, Read};
 //
 #[derive(Debug)]
 pub struct TunnelingRequest {
-    communication_channel_id: u8,
-    sequence_nr: u8,
-    cemi: Vec<u8>
+    pub communication_channel_id: u8,
+    pub sequence_nr: u8,
+    pub cemi: Vec<u8>
 }
 
 impl TunnelingRequest {

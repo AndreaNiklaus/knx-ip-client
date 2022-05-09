@@ -7,7 +7,7 @@ async fn main() -> Result<(), Whatever> {
     env_logger::init();
     let client = UdpTransport::connect("192.168.1.149:3671").await?;
 
-    let value = client.read_group_address_value(KnxAddress::group_3_level(5, 0, 1)).await?;
+    let value = client.read_group_address_value(KnxAddress::group_3_level(5, 1, 0)).await?;
     info!("Read value {:?}", value);
 
     Ok(())

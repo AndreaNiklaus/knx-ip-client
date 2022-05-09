@@ -109,10 +109,14 @@ impl UdpTransport {
                         Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
                             let data_con = LDataCon::from_cemi(cemi);
                             debug!("Parsed cEMI {:?}", data_con);
+                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
+                            self.socket.send(&ack.packet()).await;
                         }
                         Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
                             let data_ind = LDataInd::from_cemi(cemi)?;
                             debug!("Parsed cEMI {:?}", data_ind);
+                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
+                            self.socket.send(&ack.packet()).await;
                             return Ok(data_ind.value);
                         }
                         Ok(_) => break,
