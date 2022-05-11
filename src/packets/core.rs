@@ -354,6 +354,104 @@ impl ConnectionstateResponse {
     }
 }
 
+// Disconnect request
+// 03.08.02 Core section 7.8.5
+//
+#[derive(Debug)]
+pub struct DisconnectRequest {
+    communication_channel_id: u8,
+    control_endpoint: HPAI,
+}
+
+impl DisconnectRequest {
+    pub fn new(communication_channel_id: u8, control_endpoint: HPAI) -> Self {
+        Self {
+            communication_channel_id,
+            control_endpoint,
+        }
+    }
+    pub fn from_connection_response(resp: &ConnectionResponse) -> Self {
+        Self {
+            communication_channel_id: resp.communication_channel_id,
+            control_endpoint: resp.data_endpoint.clone(),
+        }
+    }
+
+    pub fn packet(&self) -> Vec<u8> {
+        let mut packet = vec![0x06, 0x10, 0x02, 0x09];
+        let mut control_endpoint_packet = self.control_endpoint.packet();
+        let size = packet.len() + 4 + control_endpoint_packet.len();
+        packet.write_u16::<BigEndian>(size as u16).unwrap();
+        packet.write_u8(self.communication_channel_id).unwrap();
+        packet.write_u8(0).unwrap();
+
+        packet.append(&mut control_endpoint_packet);
+
+        packet
+    }
+}
+
+
+// Disconnect Response
+// 03.08.02 Core section 7.8.6
+//
+#[derive(Debug)]
+pub struct DisconnectResponse {
+    pub communication_channel_id: u8,
+    pub status: u8,
+}
+
+impl DisconnectResponse {
+    pub fn from_packet(mut packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
+        let header_size = match packet_reader.read_u8() {
+            Ok(header_size) => {
+                ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
+                header_size
+            },
+            Err(e) => whatever!("Unable to read header size {:?}", e)
+        };
+
+        let version = match packet_reader.read_u8() {
+            Ok(version) => {
+                ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
+                version
+            },
+            Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
+        };
+
+        let connectionstate_response = match packet_reader.read_u16::<BigEndian>() {
+            Ok(code) => {
+                ensure_whatever!(code == 0x020a, "Disconnect response should be 0x020A instead of {:2X}", code);
+                code
+            },
+            Err(e) => whatever!("Unable to read Disconnect Response {:?}", e),
+        };
+
+        let size = match packet_reader.read_u16::<BigEndian>() {
+            Ok(size) => {
+                ensure_whatever!(size == 8, "Packet size should be 8, received size {}", size);
+                size
+            },
+            Err(e) => whatever!("Unable to read packet size {:?}", e),
+        };
+
+        let communication_channel_id = match packet_reader.read_u8() {
+            Ok(id) => id,
+            Err(e) => whatever!("Unable to read Communication Channel Id {:?}", e),
+        };
+
+        let status = match packet_reader.read_u8() {
+            Ok(status) => status,
+            Err(e) => whatever!("Unable to read status {:?}", e),
+        };
+
+        Ok(Self {
+            communication_channel_id,
+            status,
+        })
+    }
+}
+
 // Host Protocol Address Information
 // 03.08.02 Core section 8.6.2
 //

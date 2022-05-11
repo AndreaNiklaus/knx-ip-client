@@ -10,5 +10,7 @@ async fn main() -> Result<(), Whatever> {
     let value = client.read_group_address_value("5/1/0".try_into().unwrap()).await?;
     info!("Read value {:?}", value);
 
+    client.disconnect().await?;
+
     Ok(())
 }

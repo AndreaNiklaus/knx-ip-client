@@ -4,7 +4,7 @@ use log::{debug, warn};
 use snafu::{Whatever, whatever};
 use tokio::net::{UdpSocket, ToSocketAddrs};
 
-use crate::packets::{core::{ConnectionstateResponse, ConnectionstateRequest, HPAI, ConnectionRequest, ConnectionResponse}, addresses::KnxAddress, emi::{LDataReqMessage, CEMI, CEMIMessageCode, LDataCon, LDataInd}, tunneling::{TunnelingRequest, TunnelingAck}};
+use crate::packets::{core::{ConnectionstateResponse, ConnectionstateRequest, HPAI, ConnectionRequest, ConnectionResponse, DisconnectRequest, DisconnectResponse}, addresses::KnxAddress, emi::{LDataReqMessage, CEMI, CEMIMessageCode, LDataCon, LDataInd}, tunneling::{TunnelingRequest, TunnelingAck}};
 
 pub type TransportResult<T> = Result<T, Whatever>;
 
@@ -130,6 +130,24 @@ impl UdpTransport {
         }
 
         whatever!("Unable to get read group response")
+    }
+
+    pub async fn disconnect(&self) -> Result<u8, Whatever> {
+        let req = DisconnectRequest::new(self.communication_channel_id, self.control_endpoint.clone()).packet();
+        debug!("Request disconnect for connection {}", self.communication_channel_id);
+        self.socket.send(&req).await.expect("Unable to send request");
+
+        let mut resp = vec![0; 100];
+        self.socket.recv(&mut resp).await.expect("Unable to get response");
+        let mut resp_cursor = Cursor::new(resp.as_slice());
+
+        match DisconnectResponse::from_packet(&mut resp_cursor) {
+            Ok(resp) => {
+                debug!("Disconnect response status {}", resp.status);
+                Ok(resp.status)
+            },
+            Err(e) => whatever!("Unable to request disconnection for id {}, {:?}", self.communication_channel_id, e),
+        }
     }
 }
 
