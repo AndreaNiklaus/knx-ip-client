@@ -1,4 +1,4 @@
-use super::addresses::KnxAddress;
+use super::{addresses::KnxAddress, tpdu::TPDU};
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use snafu::{Whatever, whatever};
 use std::io::{Cursor, Read};
@@ -133,13 +133,15 @@ impl LDataInd {
 pub struct LDataReqMessage {
     priority: u8,
     dest_address: KnxAddress,
+    tpdu: TPDU,
 }
 
 impl LDataReqMessage {
-    pub fn new(dest_address: KnxAddress) -> Self {
+    pub fn new(dest_address: KnxAddress, tpdu: TPDU) -> Self {
         Self {
             priority: 0b11,
             dest_address,
+            tpdu,
         }
     }
 
@@ -160,9 +162,9 @@ impl LDataReqMessage {
         // packet.write_u16::<BigEndian>(0).unwrap();
         packet.write_u16::<BigEndian>(self.dest_address.to_u16()).unwrap();
 
-        packet.write_u8(1).unwrap(); // Count of APCI values
-        packet.write_u8(0).unwrap(); // TPCI
-        packet.write_u8(0).unwrap(); // APCI GroupValueRead
+        let mut tpdu_packet = self.tpdu.packet();
+        packet.write_u8(tpdu_packet.len() as u8 - 1).unwrap(); // Count of APCI values
+        packet.append(&mut tpdu_packet);
 
         packet
     }
@@ -195,7 +197,7 @@ impl CEMI {
             let additional_info_type: CEMIAdditionalInfoType = match packet_reader.read_u8() {
                 Ok(info_type) => match info_type.try_into() {
                     Ok(t) => t,
-                    Err(e) => whatever!("Unknown additional info type")
+                    Err(e) => whatever!("Unknown additional info type {:?}", e)
                 },
                 Err(e) => whatever!("Unable to read addition info type {:?}", e),
             };

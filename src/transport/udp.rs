@@ -4,7 +4,7 @@ use log::{debug, warn};
 use snafu::{Whatever, whatever};
 use tokio::net::{UdpSocket, ToSocketAddrs};
 
-use crate::packets::{core::{ConnectionstateResponse, ConnectionstateRequest, HPAI, ConnectionRequest, ConnectionResponse, DisconnectRequest, DisconnectResponse}, addresses::KnxAddress, emi::{LDataReqMessage, CEMI, CEMIMessageCode, LDataCon, LDataInd}, tunneling::{TunnelingRequest, TunnelingAck}};
+use crate::packets::{core::{ConnectionstateResponse, ConnectionstateRequest, HPAI, ConnectionRequest, ConnectionResponse, DisconnectRequest, DisconnectResponse}, addresses::KnxAddress, emi::{LDataReqMessage, CEMI, CEMIMessageCode, LDataCon, LDataInd}, tunneling::{TunnelingRequest, TunnelingAck}, tpdu::TPDU, apdu::APDU};
 
 pub type TransportResult<T> = Result<T, Whatever>;
 
@@ -68,7 +68,81 @@ impl UdpTransport {
     }
 
     pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {
-        let req = LDataReqMessage::new(addr);
+        let apdu = APDU::group_value_read();
+        let tpdu = TPDU::t_data_group(apdu);
+        let req = LDataReqMessage::new(addr, tpdu);
+        debug!("LDataReq {:?}", req);
+
+        let tunneled_req = TunnelingRequest::new(self.communication_channel_id, 0, req.packet());
+        debug!("TunnelingRequest {:?}", tunneled_req);
+        let req = tunneled_req.packet();
+        debug!("Read Group Value request: {:02x?}", req);
+        if let Err(e) = self.socket.send(&req).await {
+            whatever!("Unable to send request {:?}", e);
+        }
+
+        let mut resp = vec![0; 100];
+        if let Err(e) = self.socket.recv(&mut resp).await {
+            warn!("Unable to receive request {:?}, resend request packet", e);
+            if let Err(e) = self.socket.send(&req).await {
+                whatever!("Unable to resend read request {:?}", e);
+            }
+            if let Err(e) = self.socket.recv(&mut resp).await {
+                whatever!("Unable to receive read response {:?}", e);
+            }
+        };
+        let mut packet_cursor = Cursor::new(resp.as_slice());
+        let tunnel_ack = TunnelingAck::from_packet(&mut packet_cursor)?;
+        debug!("Tunneling Ack received {:?}", tunnel_ack);
+        loop {
+            let mut resp = vec![0; 100];
+            if let Err(e) = self.socket.recv(&mut resp).await {
+                whatever!("Unable to get response {:?}", e);
+            }
+            debug!("Read Group Value response: {:02x?}", resp);
+            let mut resp_cursor = Cursor::new(resp.as_slice());
+            match TunnelingRequest::from_packet(&mut resp_cursor) {
+                Ok(parsed_resp) => {
+                    debug!("Read Group Value response: {:?}", parsed_resp);
+                    let mut cemi_cursor = Cursor::new(parsed_resp.get_cemi().as_slice());
+                    let parsed_cemi = CEMI::from_packet(&mut cemi_cursor);
+
+                    match parsed_cemi {
+                        Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
+                            let data_con = LDataCon::from_cemi(cemi);
+                            debug!("Parsed cEMI {:?}", data_con);
+                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
+                            self.socket.send(&ack.packet()).await;
+                        }
+                        Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
+                            let data_ind = LDataInd::from_cemi(cemi)?;
+                            debug!("Parsed cEMI {:?}", data_ind);
+                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
+                            self.socket.send(&ack.packet()).await;
+                            return Ok(data_ind.value);
+                        }
+                        Ok(_) => break,
+                        Err(e) => whatever!("Error parsing cEMI response {:?}", e),
+                    }
+                },
+                Err(e) => {
+                    whatever!("Unable to parse read group response {:?}", e);
+                }
+            }
+        }
+
+        whatever!("Unable to get read group response")
+    }
+
+    pub async fn flush(&self) {
+        let mut buf = vec![0; 100];
+        while self.socket.try_recv(&mut buf).is_ok() {};
+    }
+
+    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<Vec<u8>> {
+        let apdu = APDU::group_value_write(value);
+        let tpdu = TPDU::t_data_group(apdu);
+        let req = LDataReqMessage::new(addr, tpdu);
         debug!("LDataReq {:?}", req);
 
         let tunneled_req = TunnelingRequest::new(self.communication_channel_id, 0, req.packet());
