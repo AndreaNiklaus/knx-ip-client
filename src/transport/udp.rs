@@ -212,18 +212,7 @@ impl UdpClient {
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Whatever> {
         let transport = Arc::new(Mutex::new(UdpTransport::connect(addr).await?));
 
-        let this = Self {transport};
-        this.management_task();
-
-        Ok(this)
-    }
-
-    fn management_task(&self) {
-        tokio::spawn(async {
-            loop {
-
-            }
-        });
+        Ok(Self {transport})
     }
 
     pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {
@@ -233,7 +222,7 @@ impl UdpClient {
         debug!("LDataReq {:?}", req);
 
         let transport = self.transport.lock().await;
-        transport.tunnel_req(req.packet()).await;
+        transport.tunnel_req(req.packet()).await?;
         let mut rx = transport.rx.lock().await;
         loop {
             match rx.recv().await {
@@ -265,7 +254,7 @@ impl UdpClient {
         debug!("LDataReq {:?}", req);
 
         let transport = self.transport.lock().await;
-        transport.tunnel_req(req.packet()).await;
+        transport.tunnel_req(req.packet()).await?;
         let mut rx = transport.rx.lock().await;
         loop {
             match rx.recv().await {
