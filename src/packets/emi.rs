@@ -1,5 +1,6 @@
 use super::{addresses::KnxAddress, tpdu::TPDU};
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
+use log::debug;
 use snafu::{Whatever, whatever};
 use std::io::{Cursor, Read};
 
@@ -102,15 +103,15 @@ impl LDataInd {
         let ack_request = (control1 & (1 << 1)) > 0;
 
         let acpi = (octects_6_7 & 0x03c0) >> 6;
-        println!("Length {:?}", length);
-        println!("Octects 6 and 7: {:0x?}", octects_6_7);
-        println!("Apci: {:0x?}", acpi);
+        debug!("Length {:?}", length);
+        debug!("Octects 6 and 7: {:0x?}", octects_6_7);
+        debug!("Apci: {:0x?}", acpi);
 
         let mut value = vec![0; length as usize];
         if let Err(e) = reader.read(&mut value) {
             whatever!("Unable to read value of length {}, {:?}", length, e);
         }
-        println!("Value: {:0x?}", value);
+        debug!("Value: {:0x?}", value);
 
         Ok(Self {
             cemi,

@@ -1,17 +1,29 @@
+use std::time::Duration;
+use tokio::time::timeout;
+use std::sync::Arc;
 use std::{net::SocketAddr, io::Cursor};
 
-use log::{debug, warn};
+use log::{debug, warn, info};
 use snafu::{Whatever, whatever};
 use tokio::net::{UdpSocket, ToSocketAddrs};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::packets::{core::{ConnectionstateResponse, ConnectionstateRequest, HPAI, ConnectionRequest, ConnectionResponse, DisconnectRequest, DisconnectResponse}, addresses::KnxAddress, emi::{LDataReqMessage, CEMI, CEMIMessageCode, LDataCon, LDataInd}, tunneling::{TunnelingRequest, TunnelingAck}, tpdu::TPDU, apdu::APDU};
 
 pub type TransportResult<T> = Result<T, Whatever>;
 
-pub struct UdpTransport {
-    socket: UdpSocket,
+enum TunnelingResponse {
+    TunnelingRequest(TunnelingRequest),
+    TunnelingAck(TunnelingAck),
+    DisconnectResponse(DisconnectResponse),
+}
+
+struct UdpTransport {
+    socket: Arc<UdpSocket>,
     communication_channel_id: u8,
     control_endpoint: HPAI,
+    sequence_nr: Arc<Mutex<u8>>,
+    rx: Arc<Mutex<mpsc::Receiver<CEMI>>>,
 }
 
 impl UdpTransport {
@@ -40,12 +52,76 @@ impl UdpTransport {
         let connection = ConnectionResponse::from_packet(&mut resp_cursor)?;
         debug!("Parsed Connection response {:?}", connection);
 
+        let (from_knx_tx, rx) = mpsc::channel(100);
+        let socket = Arc::new(socket);
+        let s = socket.clone();
+        tokio::spawn(async move {
+            loop {
+                let mut data = vec![0; 100];
+                tokio::select! {
+                    count = s.recv(&mut data) => {
+                        if count.is_ok() && count.unwrap() > 0 {
+                            let resp = match UdpTransport::parse_response(data) {
+                                Ok(resp) => resp,
+                                Err(e) => {
+                                    warn!("Unable to parse tunneling response. {:?}", e);
+                                    continue;
+                                }
+                            };
+                            match resp {
+                                TunnelingResponse::TunnelingRequest(req) => {
+                                    let ack = TunnelingAck::new(req.communication_channel_id, req.sequence_nr, 0);
+                                    if let Err(e) = s.send(&ack.packet()).await {
+                                        warn!("Unable to send tunneling ack to knxip target {:?}", e);
+                                    }
+
+                                    let mut cemi = Cursor::new(req.get_cemi().as_slice());
+
+                                    let cemi = match CEMI::from_packet(&mut cemi) {
+                                        Ok(cemi) => cemi,
+                                        Err(e) => {
+                                            warn!("Error parsing cEMI response {:?}", e);
+                                            continue;
+                                        }
+                                    };
+                                    match from_knx_tx.send(cemi).await {
+                                            Ok(_) => (),
+                                            Err(e) => warn!("Unable to pass received request from knx device"),
+                                    };
+                                },
+                                TunnelingResponse::TunnelingAck(_) => {
+
+                                },
+                                TunnelingResponse::DisconnectResponse(resp) => {
+                                    if resp.status == 0 {
+                                        info!("Successfully disconnected");
+                                        break;
+                                    } else {
+                                        warn!("Unable to disconnect, status code {:?}", resp);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
 
         Ok(Self {
             socket,
             communication_channel_id: connection.get_communication_channel_id(),
             control_endpoint: connection.get_data_endpoint(),
+            sequence_nr: Arc::new(Mutex::new(0)),
+            rx: Arc::new(Mutex::new(rx)),
         })
+    }
+
+    async fn get_next_sequence_nr(&self) -> u8 {
+        let mut sequence_nr = self.sequence_nr.lock().await;
+        let num = *sequence_nr;
+        *sequence_nr = sequence_nr.wrapping_add(1);
+        num
     }
 
     pub fn get_communication_channel_id(&self) -> u8 {
@@ -67,143 +143,16 @@ impl UdpTransport {
         ConnectionstateResponse::from_packet(&mut cursor)
     }
 
-    pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {
-        let apdu = APDU::group_value_read();
-        let tpdu = TPDU::t_data_group(apdu);
-        let req = LDataReqMessage::new(addr, tpdu);
-        debug!("LDataReq {:?}", req);
-
-        let tunneled_req = TunnelingRequest::new(self.communication_channel_id, 0, req.packet());
+    pub async fn tunnel_req(&self, req: Vec<u8>) -> Result<(), Whatever> {
+        let sequence_nr = self.get_next_sequence_nr().await;
+        let tunneled_req = TunnelingRequest::new(self.communication_channel_id, sequence_nr, req);
         debug!("TunnelingRequest {:?}", tunneled_req);
         let req = tunneled_req.packet();
-        debug!("Read Group Value request: {:02x?}", req);
+        debug!("Raw tunnel request: {:02x?}", req);
         if let Err(e) = self.socket.send(&req).await {
             whatever!("Unable to send request {:?}", e);
         }
-
-        let mut resp = vec![0; 100];
-        if let Err(e) = self.socket.recv(&mut resp).await {
-            warn!("Unable to receive request {:?}, resend request packet", e);
-            if let Err(e) = self.socket.send(&req).await {
-                whatever!("Unable to resend read request {:?}", e);
-            }
-            if let Err(e) = self.socket.recv(&mut resp).await {
-                whatever!("Unable to receive read response {:?}", e);
-            }
-        };
-        let mut packet_cursor = Cursor::new(resp.as_slice());
-        let tunnel_ack = TunnelingAck::from_packet(&mut packet_cursor)?;
-        debug!("Tunneling Ack received {:?}", tunnel_ack);
-        loop {
-            let mut resp = vec![0; 100];
-            if let Err(e) = self.socket.recv(&mut resp).await {
-                whatever!("Unable to get response {:?}", e);
-            }
-            debug!("Read Group Value response: {:02x?}", resp);
-            let mut resp_cursor = Cursor::new(resp.as_slice());
-            match TunnelingRequest::from_packet(&mut resp_cursor) {
-                Ok(parsed_resp) => {
-                    debug!("Read Group Value response: {:?}", parsed_resp);
-                    let mut cemi_cursor = Cursor::new(parsed_resp.get_cemi().as_slice());
-                    let parsed_cemi = CEMI::from_packet(&mut cemi_cursor);
-
-                    match parsed_cemi {
-                        Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
-                            let data_con = LDataCon::from_cemi(cemi);
-                            debug!("Parsed cEMI {:?}", data_con);
-                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
-                            self.socket.send(&ack.packet()).await;
-                        }
-                        Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
-                            let data_ind = LDataInd::from_cemi(cemi)?;
-                            debug!("Parsed cEMI {:?}", data_ind);
-                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
-                            self.socket.send(&ack.packet()).await;
-                            return Ok(data_ind.value);
-                        }
-                        Ok(_) => break,
-                        Err(e) => whatever!("Error parsing cEMI response {:?}", e),
-                    }
-                },
-                Err(e) => {
-                    whatever!("Unable to parse read group response {:?}", e);
-                }
-            }
-        }
-
-        whatever!("Unable to get read group response")
-    }
-
-    pub async fn flush(&self) {
-        let mut buf = vec![0; 100];
-        while self.socket.try_recv(&mut buf).is_ok() {};
-    }
-
-    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<Vec<u8>> {
-        let apdu = APDU::group_value_write(value);
-        let tpdu = TPDU::t_data_group(apdu);
-        let req = LDataReqMessage::new(addr, tpdu);
-        debug!("LDataReq {:?}", req);
-
-        let tunneled_req = TunnelingRequest::new(self.communication_channel_id, 0, req.packet());
-        debug!("TunnelingRequest {:?}", tunneled_req);
-        let req = tunneled_req.packet();
-        debug!("Read Group Value request: {:02x?}", req);
-        if let Err(e) = self.socket.send(&req).await {
-            whatever!("Unable to send request {:?}", e);
-        }
-
-        let mut resp = vec![0; 100];
-        if let Err(e) = self.socket.recv(&mut resp).await {
-            warn!("Unable to receive request {:?}, resend request packet", e);
-            if let Err(e) = self.socket.send(&req).await {
-                whatever!("Unable to resend read request {:?}", e);
-            }
-            if let Err(e) = self.socket.recv(&mut resp).await {
-                whatever!("Unable to receive read response {:?}", e);
-            }
-        };
-        let mut packet_cursor = Cursor::new(resp.as_slice());
-        let tunnel_ack = TunnelingAck::from_packet(&mut packet_cursor)?;
-        debug!("Tunneling Ack received {:?}", tunnel_ack);
-        loop {
-            let mut resp = vec![0; 100];
-            if let Err(e) = self.socket.recv(&mut resp).await {
-                whatever!("Unable to get response {:?}", e);
-            }
-            debug!("Read Group Value response: {:02x?}", resp);
-            let mut resp_cursor = Cursor::new(resp.as_slice());
-            match TunnelingRequest::from_packet(&mut resp_cursor) {
-                Ok(parsed_resp) => {
-                    debug!("Read Group Value response: {:?}", parsed_resp);
-                    let mut cemi_cursor = Cursor::new(parsed_resp.get_cemi().as_slice());
-                    let parsed_cemi = CEMI::from_packet(&mut cemi_cursor);
-
-                    match parsed_cemi {
-                        Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
-                            let data_con = LDataCon::from_cemi(cemi);
-                            debug!("Parsed cEMI {:?}", data_con);
-                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
-                            self.socket.send(&ack.packet()).await;
-                        }
-                        Ok(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
-                            let data_ind = LDataInd::from_cemi(cemi)?;
-                            debug!("Parsed cEMI {:?}", data_ind);
-                            let ack = TunnelingAck::new(parsed_resp.communication_channel_id, parsed_resp.sequence_nr, 0);
-                            self.socket.send(&ack.packet()).await;
-                            return Ok(data_ind.value);
-                        }
-                        Ok(_) => break,
-                        Err(e) => whatever!("Error parsing cEMI response {:?}", e),
-                    }
-                },
-                Err(e) => {
-                    whatever!("Unable to parse read group response {:?}", e);
-                }
-            }
-        }
-
-        whatever!("Unable to get read group response")
+        Ok(())
     }
 
     pub async fn disconnect(&self) -> Result<u8, Whatever> {
@@ -222,6 +171,122 @@ impl UdpTransport {
             },
             Err(e) => whatever!("Unable to request disconnection for id {}, {:?}", self.communication_channel_id, e),
         }
+    }
+
+    pub fn parse_response(resp: Vec<u8>) -> Result<TunnelingResponse, Whatever> {
+        debug!("TunnelingResponse: {:02x?}", resp);
+        let response_code = resp.get(2..4);
+        if response_code.is_some() {
+            if response_code == Some(&vec![0x04, 0x20]) {
+                debug!("Received tunneling request");
+                let mut resp_cursor = Cursor::new(resp.as_slice());
+                let resp = TunnelingRequest::from_packet(&mut resp_cursor)?;
+                debug!("Parsed tunneling request {:?}", resp);
+                Ok(TunnelingResponse::TunnelingRequest(resp))
+            } else if response_code == Some(&vec![0x04, 0x21]) {
+                debug!("Received tunneling ack");
+                let mut resp_cursor = Cursor::new(resp.as_slice());
+                let resp = TunnelingAck::from_packet(&mut resp_cursor)?;
+                debug!("Parsed tunneling ack {:?}", resp);
+                Ok(TunnelingResponse::TunnelingAck(resp))
+            } else if response_code == Some(&vec![0x02, 0x0a]) {
+                debug!("Received disconnection response");
+                let mut resp_cursor = Cursor::new(resp.as_slice());
+                let resp = DisconnectResponse::from_packet(&mut resp_cursor)?;
+                debug!("Parsed disconnect response {:?}", resp);
+                Ok(TunnelingResponse::DisconnectResponse(resp))
+            } else {
+                whatever!("Unknown response code {:?}", response_code);
+            }
+        } else {
+            whatever!("Tunneling response without a valid code {:?}", response_code)
+        }
+    }
+}
+
+pub struct UdpClient {
+    transport: Arc<Mutex<UdpTransport>>,
+}
+
+impl UdpClient {
+    pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Whatever> {
+        let transport = Arc::new(Mutex::new(UdpTransport::connect(addr).await?));
+
+        let this = Self {transport};
+        this.management_task();
+
+        Ok(this)
+    }
+
+    fn management_task(&self) {
+        tokio::spawn(async {
+            loop {
+
+            }
+        });
+    }
+
+    pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {
+        let apdu = APDU::group_value_read();
+        let tpdu = TPDU::t_data_group(apdu);
+        let req = LDataReqMessage::new(addr, tpdu);
+        debug!("LDataReq {:?}", req);
+
+        let transport = self.transport.lock().await;
+        transport.tunnel_req(req.packet()).await;
+        let mut rx = transport.rx.lock().await;
+        loop {
+            match rx.recv().await {
+                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
+                    let data_con = LDataCon::from_cemi(cemi);
+                    debug!("Parsed confirmation cEMI {:?}", data_con);
+                    continue;
+                }
+                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
+                    let data_ind = LDataInd::from_cemi(cemi)?;
+                    debug!("Parsed indication cEMI {:?}", data_ind);
+                    return Ok(data_ind.value);
+                }
+                Some(cemi) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
+                None => whatever!("No more data will be received from client"),
+            }
+        }
+    }
+
+
+    pub async fn flush(&self) -> Result<(), Whatever> {
+        Ok(())
+    }
+
+    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<Vec<u8>> {
+        let apdu = APDU::group_value_write(value);
+        let tpdu = TPDU::t_data_group(apdu);
+        let req = LDataReqMessage::new(addr, tpdu);
+        debug!("LDataReq {:?}", req);
+
+        let transport = self.transport.lock().await;
+        transport.tunnel_req(req.packet()).await;
+        let mut rx = transport.rx.lock().await;
+        loop {
+            match rx.recv().await {
+                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
+                    let data_con = LDataCon::from_cemi(cemi);
+                    debug!("Parsed confirmation cEMI {:?}", data_con);
+                    continue;
+                }
+                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
+                    let data_ind = LDataInd::from_cemi(cemi)?;
+                    debug!("Parsed indication cEMI {:?}", data_ind);
+                    return Ok(data_ind.value);
+                }
+                Some(cemi) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
+                None => whatever!("No more data will be received from client"),
+            }
+        }
+    }
+
+    pub async fn disconnect(&self) -> Result<u8, Whatever> {
+        self.transport.lock().await.disconnect().await
     }
 }
 
