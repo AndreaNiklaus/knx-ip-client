@@ -3,11 +3,10 @@ name = "knx-ip-client"
 version = "0.1.0"
 edition = "2021"
 authors = ["Andrea Niklaus <andrea.niklaus@enc.ch>"]
-
+license = "MIT"
 description = "KNXIP Client library"
-
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/AndreaNiklaus/knx-ip-client"
+readme = "README.md"
 
 [dependencies]
 byteorder = { version = "1.4.3", default-features = true }
