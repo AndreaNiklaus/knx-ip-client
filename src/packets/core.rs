@@ -11,6 +11,9 @@ pub const TUNNEL_LINKLAYER: u8 = 0x02;
 pub const TUNNEL_RAW: u8 = 0x04;
 pub const TUNNEL_BUSMONITOR: u8 = 0x80;
 pub const E_NO_ERROR: u8 = 0x00;
+pub const E_CONNECTION_TYPE: u8 = 0x22;
+pub const E_CONNECTION_OPTION: u8 = 0x23;
+pub const E_NO_MORE_CONNECTIONS: u8 = 0x24;
 pub const E_TUNNELING_LAYER: u8 = 0x29;
 #[derive(Debug)]
 pub struct CRI {
@@ -98,6 +101,14 @@ impl ConnectionRequest {
         }
     }
 
+    pub fn busmonitor() -> Self {
+        Self {
+            control_endpoint: HPAI::udp(),
+            data_endpoint: HPAI::udp(),
+            cri: CRI::tunnel_busmonitor(),
+        }
+    }
+
     pub fn packet(&self) -> Vec<u8> {
         let mut packet = vec![6, 0x10, 2, 5]; // Header
         let mut control_endpoint_packet = self.control_endpoint.packet();
@@ -121,9 +132,6 @@ impl ConnectionRequest {
 // Connection response
 // 03.08.02 Core section 7.8.2
 //
-pub const E_CONNECTION_TYPE: u8 = 0x22;
-pub const E_CONNECTION_OPTION: u8 = 0x23;
-pub const E_NO_MORE_CONNECTIONS: u8 = 0x24;
 #[derive(Debug)]
 pub struct ConnectionResponse {
     communication_channel_id: u8,
@@ -166,7 +174,7 @@ impl ConnectionResponse {
 
         let size = match packet_reader.read_u16::<BigEndian>() {
             Ok(size) => {
-                ensure_whatever!(size > 8, "Packet size should greather than 8, received size {}", size);
+                ensure_whatever!(size >= 8, "Packet size should greather than 8, received size {}", size);
                 size
             },
             Err(e) => whatever!("Unable to read packet size {:?}", e),
@@ -181,6 +189,14 @@ impl ConnectionResponse {
             Ok(status) => status,
             Err(e) => whatever!("Unable to read status {:?}", e),
         };
+
+        match status {
+            E_CONNECTION_TYPE => whatever!("Target KNX/IP device does not support requested connection type"),
+            E_CONNECTION_OPTION => whatever!("Target KNX/IP device does not support one or more requested connection options"),
+            E_NO_MORE_CONNECTIONS => whatever!("No more connections available on target KNX/IP device"),
+            E_TUNNELING_LAYER => whatever!("Target KNX/IP device does not support requested tunneling layer"),
+            _ => (),
+        }
 
         let data_endpoint = HPAI::from_packet(&mut packet_reader)?;
         let crd = CRD::from_packet(&mut packet_reader)?;

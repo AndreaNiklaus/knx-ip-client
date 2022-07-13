@@ -1,3 +1,4 @@
+use crate::packets::tunneling::FeatureSet;
 use std::time::Duration;
 use tokio::time::timeout;
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use snafu::{Whatever, whatever};
 use tokio::net::{UdpSocket, ToSocketAddrs};
 use tokio::sync::{Mutex, mpsc};
 
+use crate::packets::tunneling::KnxIpFeature;
 use crate::packets::{core::{ConnectionstateResponse, ConnectionstateRequest, HPAI, ConnectionRequest, ConnectionResponse, DisconnectRequest, DisconnectResponse}, addresses::KnxAddress, emi::{LDataReqMessage, CEMI, CEMIMessageCode, LDataCon, LDataInd}, tunneling::{TunnelingRequest, TunnelingAck}, tpdu::TPDU, apdu::APDU};
 
 pub type TransportResult<T> = Result<T, Whatever>;
@@ -86,7 +88,7 @@ impl UdpTransport {
                                     };
                                     match from_knx_tx.send(cemi).await {
                                             Ok(_) => (),
-                                            Err(e) => warn!("Unable to pass received request from knx device"),
+                                            Err(e) => warn!("Unable to pass received request from knx device, {:?}", e),
                                     };
                                 },
                                 TunnelingResponse::TunnelingAck(_) => {
@@ -148,6 +150,18 @@ impl UdpTransport {
         let tunneled_req = TunnelingRequest::new(self.communication_channel_id, sequence_nr, req);
         debug!("TunnelingRequest {:?}", tunneled_req);
         let req = tunneled_req.packet();
+        debug!("Raw tunnel request: {:02x?}", req);
+        if let Err(e) = self.socket.send(&req).await {
+            whatever!("Unable to send request {:?}", e);
+        }
+        Ok(())
+    }
+
+    pub async fn set_feature(&self, feature: KnxIpFeature, value: u8) -> Result<(), Whatever> {
+        let sequence_nr = self.get_next_sequence_nr().await;
+        let req = FeatureSet::new(self.communication_channel_id, sequence_nr, feature, value);
+        debug!("FeatureSet request {:?}", req);
+        let req = req.packet();
         debug!("Raw tunnel request: {:02x?}", req);
         if let Err(e) = self.socket.send(&req).await {
             whatever!("Unable to send request {:?}", e);
@@ -278,7 +292,6 @@ impl UdpClient {
         self.transport.lock().await.disconnect().await
     }
 }
-
 
 #[cfg(test)]
 mod tests {

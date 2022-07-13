@@ -15,6 +15,10 @@ impl PdtKnxScaledValue {
         }
     }
 
+    pub fn get_value(&self) -> u8 {
+        self.value
+    }
+
     pub fn get_bytes(&self) -> Vec<u8> {
         vec![self.value]
     }
@@ -40,6 +44,10 @@ impl PdtKnxInt {
             unit: "%".to_string(),
             value: value * 100
         }
+    }
+
+    pub fn get_value(&self) -> i16 {
+        self.value
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
@@ -164,6 +172,50 @@ fn bytes_to_float(bytes: Vec<u8>) -> Result<f32, Whatever> {
     }
     let mantissa: f32 = mantissa as f32 * sign;
     Ok((0.01 * mantissa) * (1 << exp) as f32)
+}
+
+pub struct PdtKnxByte {
+    code: String,
+    value: u8,
+}
+
+impl PdtKnxByte {
+    pub fn general(value: u8) -> Self {
+        Self {
+            code: "20.x".to_string(),
+            value
+        }
+    }
+
+    pub fn get_value(&self) -> u8 {
+        self.value
+    }
+
+    pub fn get_bytes(&self) -> Vec<u8> {
+        vec![self.value]
+    }
+}
+
+pub struct PdtKnxULong {
+    code: String,
+    value: u32,
+}
+
+impl PdtKnxULong {
+    pub fn general(value: u32) -> Self {
+        Self {
+            code: "12.x".to_string(),
+            value
+        }
+    }
+
+    pub fn get_value(&self) -> u32 {
+        self.value
+    }
+
+    pub fn get_bytes(&self) -> Vec<u8> {
+        self.value.to_be_bytes().to_vec()
+    }
 }
 
 #[cfg(test)]

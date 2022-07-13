@@ -89,7 +89,8 @@ impl LDataInd {
             Err(e) => whatever!("Unable to read destination address {:?}", e),
         };
         let length = match reader.read_u8() {
-            Ok(len) => len - 1,
+            Ok(len) if len > 0 => len - 1,
+            Ok(_) => 0,
             Err(e) => whatever!("Unable to read length {:?}", e),
         };
         let octects_6_7 = match reader.read_u16::<BigEndian>() {
@@ -235,7 +236,7 @@ impl CEMI {
 #[derive(Copy, Clone)]
 #[repr(u8)]
 pub enum CEMIMessageCode {
-    LBusmodInd = 0x2b, // NL
+    LBusmonInd = 0x2b, // NL
     LDataReq = 0x11, // DLL
     LDataCon = 0x2e, // NL
     LDataInd = 0x29, // NL
