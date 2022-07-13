@@ -182,6 +182,13 @@ impl fmt::Debug for Group3LevelAddress {
 }
 
 impl Group3LevelAddress {
+    pub fn from_u16(v: u16) -> Self {
+        let main = (v & 0b11111 << 11) >> 11;
+        let middle = (v & 0b111 << 8) >> 8;
+        let sub = v & 0b11111111;
+        Self {main: main as u8, middle: middle as u8, sub: sub as u8}
+    }
+
     pub fn to_u16(&self) -> u16 {
         let mut addr = 0u16;
         addr |= (self.main as u16) << 11 as u16;
@@ -286,5 +293,19 @@ mod tests {
 
         let addr: Result<KnxAddress, _> = "1/2/3/4".try_into();
         assert!(addr.is_err(), "Should not be able to parse '1/2/3/4' address");
+    }
+
+    #[test]
+    fn parse_group_address_from_u8() {
+        let _tests: Vec<()> = vec![
+            (1, 1, 1),
+            (0b10000, 0b100, 0b10000000)
+        ].iter().map(|case| {
+            let addr = Group3LevelAddress {main: case.0, middle: case.1, sub: case.2};
+            let parsed_addr = Group3LevelAddress::from_u16(addr.to_u16());
+            assert_eq!(addr.main, parsed_addr.main, "Main address does not match");
+            assert_eq!(addr.middle, parsed_addr.middle, "Middle address does not match");
+            assert_eq!(addr.sub, parsed_addr.sub, "Sub address does not match");
+        }).collect();
     }
 }
