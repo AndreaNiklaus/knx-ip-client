@@ -11,12 +11,20 @@ impl PdtKnxScaledValue {
         Self {
             code: "5.001".to_string(),
             unit: "%".to_string(),
-            value: (percent * 2.55).round() as u8
+            value: (percent * 2.54 + 1.0).round() as u8
         }
     }
 
-    pub fn get_value(&self) -> u8 {
-        self.value
+    pub fn get_value(&self) -> f32 {
+        if self.value == 0 {
+            return 0.0
+        }
+        (self.value - 1) as f32 / 2.54
+    }
+
+    pub fn from_bytes(b: &Vec<u8>) -> Self {
+        let value = b.get(0).unwrap_or(&0);
+        Self {code: "5.001".to_string(), unit: "%".to_string(), value: *value}
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
