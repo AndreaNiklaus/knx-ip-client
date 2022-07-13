@@ -54,12 +54,12 @@ impl LDataCon {
 
 #[derive(Debug)]
 pub struct LData {
-    src: u16,
-    dest: u16,
-    frame_type: bool,
-    repetition: bool,
-    system_broadcast: bool,
-    ack_request: bool,
+    pub src: u16,
+    pub dest: u16,
+    pub frame_type: bool,
+    pub repetition: bool,
+    pub system_broadcast: bool,
+    pub ack_request: bool,
 }
 
 #[derive(Debug)]
