@@ -51,8 +51,8 @@ impl UdpMonitorTransport {
             whatever!("Unable to connect with target {:?}", e);
         }
 
-        let req = ConnectionRequest::busmonitor().packet();
-        debug!("Sending busmonitor connection request {:0x?}", req);
+        let req = ConnectionRequest::tunnel().packet();
+        debug!("Sending tunnel connection request {:0x?}", req);
         socket.send(&req).await.expect("Unable to send request");
 
         let mut resp = vec![0; 100];
