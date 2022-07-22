@@ -230,6 +230,7 @@ impl UdpClient {
     }
 
     pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {
+        let expected_addr = addr.to_u16();
         let apdu = APDU::group_value_read();
         let tpdu = TPDU::t_data_group(apdu);
         let req = LDataReqMessage::new(addr, tpdu);
@@ -243,12 +244,13 @@ impl UdpClient {
                 Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
                     let data_con = LDataCon::from_cemi(cemi);
                     debug!("Parsed confirmation cEMI {:?}", data_con);
-                    continue;
                 }
                 Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
                     let data_ind = LDataInd::from_cemi(cemi)?;
                     debug!("Parsed indication cEMI {:?}", data_ind);
-                    return Ok(data_ind.value);
+                    if data_ind.l_data.dest == expected_addr {
+                        return Ok(data_ind.value);
+                    }
                 }
                 Some(cemi) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
                 None => whatever!("No more data will be received from client"),
