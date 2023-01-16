@@ -29,9 +29,14 @@ impl APDU {
     }
 
     pub fn group_value_write(data: Vec<u8>) -> Self {
+        let data = if data.len() == 1 {
+            APDUData::Small(data[0])
+        } else {
+            APDUData::Big(data)
+        };
         Self {
             apci: APCI::a_group_value_write(),
-            data: APDUData::Big(data),
+            data
         }
     }
 

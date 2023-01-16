@@ -226,6 +226,28 @@ impl PdtKnxULong {
     }
 }
 
+pub struct PdtKnxBit {
+    code: String,
+    value: bool,
+}
+
+impl PdtKnxBit {
+    pub fn switch(value: bool) -> Self {
+        Self {
+            code: "1.001".to_string(),
+            value
+        }
+    }
+
+    pub fn get_value(&self) -> bool {
+        self.value
+    }
+
+    pub fn get_bytes(&self) -> Vec<u8> {
+        vec![self.value as u8]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
