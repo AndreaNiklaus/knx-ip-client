@@ -219,6 +219,7 @@ impl UdpTransport {
 }
 
 pub struct UdpClient {
+    timeout: Duration,
     transport: Arc<Mutex<UdpTransport>>,
 }
 
@@ -226,7 +227,15 @@ impl UdpClient {
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Whatever> {
         let transport = Arc::new(Mutex::new(UdpTransport::connect(addr).await?));
 
-        Ok(Self {transport})
+        Ok(Self {transport, timeout: Duration::from_secs(10)})
+    }
+
+    fn get_read_timeout(&self) -> Duration {
+        self.timeout.clone()
+    }
+
+    fn get_write_timeout(&self) -> Duration {
+        self.timeout.clone()
     }
 
     pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {
@@ -240,20 +249,21 @@ impl UdpClient {
         transport.tunnel_req(req.packet()).await?;
         let mut rx = transport.rx.lock().await;
         loop {
-            match rx.recv().await {
-                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
+            match timeout(self.get_read_timeout(), rx.recv()).await {
+                Ok(Some(cemi)) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
                     let data_con = LDataCon::from_cemi(cemi);
                     debug!("Parsed confirmation cEMI {:?}", data_con);
                 }
-                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
+                Ok(Some(cemi)) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
                     let data_ind = LDataInd::from_cemi(cemi)?;
                     debug!("Parsed indication cEMI {:?}", data_ind);
                     if data_ind.l_data.dest == expected_addr {
                         return Ok(data_ind.value);
                     }
                 }
-                Some(cemi) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
-                None => whatever!("No more data will be received from client"),
+                Ok(Some(cemi)) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
+                Ok(None) => whatever!("No more data will be received from client"),
+                Err(_) => whatever!("Request timed out"),
             }
         }
     }
@@ -273,19 +283,20 @@ impl UdpClient {
         transport.tunnel_req(req.packet()).await?;
         let mut rx = transport.rx.lock().await;
         loop {
-            match rx.recv().await {
-                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
+            match timeout(self.get_write_timeout(), rx.recv()).await {
+                Ok(Some(cemi)) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
                     let data_con = LDataCon::from_cemi(cemi);
                     debug!("Parsed confirmation cEMI {:?}", data_con);
                     continue;
                 }
-                Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
+                Ok(Some(cemi)) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
                     let data_ind = LDataInd::from_cemi(cemi)?;
                     debug!("Parsed indication cEMI {:?}", data_ind);
                     return Ok(data_ind.value);
                 }
-                Some(cemi) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
-                None => whatever!("No more data will be received from client"),
+                Ok(Some(cemi)) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
+                Ok(None) => whatever!("No more data will be received from client"),
+                Err(_) => whatever!("Write request timed out"),
             }
         }
     }
