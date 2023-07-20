@@ -2,7 +2,6 @@ use std::fmt;
 
 use snafu::{whatever, Whatever};
 
-
 // KNX Address
 //
 #[derive(Debug)]
@@ -15,32 +14,19 @@ pub enum KnxAddress {
 
 impl KnxAddress {
     pub fn individual(area: u8, line: u8, address: u8) -> Self {
-        Self::Individual(IndividualAddress {
-            area,
-            line,
-            address,
-        })
+        Self::Individual(IndividualAddress { area, line, address })
     }
 
     pub fn group_1_level(main: u16) -> Self {
-        Self::Group1Level(Group1LevelAddress {
-            main,
-        })
+        Self::Group1Level(Group1LevelAddress { main })
     }
 
     pub fn group_2_level(main: u8, sub: u8) -> Self {
-        Self::Group2Level(Group2LevelAddress {
-            main,
-            sub,
-        })
+        Self::Group2Level(Group2LevelAddress { main, sub })
     }
 
     pub fn group_3_level(main: u8, middle: u8, sub: u8) -> Self {
-        Self::Group3Level(Group3LevelAddress {
-            main,
-            middle,
-            sub,
-        })
+        Self::Group3Level(Group3LevelAddress { main, middle, sub })
     }
 
     pub fn to_u16(&self) -> u16 {
@@ -67,7 +53,7 @@ impl TryFrom<&str> for KnxAddress {
                 let main = parts.get(0).unwrap();
                 let main = match main.parse::<u16>() {
                     Ok(main) => main,
-                    Err(e) => whatever!("Unable to parse main address {} {:?}", main, e)
+                    Err(e) => whatever!("Unable to parse main address {} {:?}", main, e),
                 };
 
                 Ok(Self::group_1_level(main))
@@ -75,12 +61,12 @@ impl TryFrom<&str> for KnxAddress {
                 let main = parts.get(0).unwrap();
                 let main = match main.parse::<u8>() {
                     Ok(main) => main,
-                    Err(e) => whatever!("Unable to parse main address {:?}", e)
+                    Err(e) => whatever!("Unable to parse main address {:?}", e),
                 };
                 let sub = parts.get(1).unwrap();
                 let sub = match sub.parse::<u8>() {
                     Ok(sub) => sub,
-                    Err(e) => whatever!("Unable to parse sub address {:?}", e)
+                    Err(e) => whatever!("Unable to parse sub address {:?}", e),
                 };
 
                 Ok(Self::group_2_level(main, sub))
@@ -88,17 +74,17 @@ impl TryFrom<&str> for KnxAddress {
                 let main = parts.get(0).unwrap();
                 let main = match main.parse::<u8>() {
                     Ok(main) => main,
-                    Err(e) => whatever!("Unable to parse main address {:?}", e)
+                    Err(e) => whatever!("Unable to parse main address {:?}", e),
                 };
                 let mid = parts.get(1).unwrap();
                 let mid = match mid.parse::<u8>() {
                     Ok(mid) => mid,
-                    Err(e) => whatever!("Unable to parse mid address {:?}", e)
+                    Err(e) => whatever!("Unable to parse mid address {:?}", e),
                 };
                 let sub = parts.get(2).unwrap();
                 let sub = match sub.parse::<u8>() {
                     Ok(sub) => sub,
-                    Err(e) => whatever!("Unable to parse sub address {:?}", e)
+                    Err(e) => whatever!("Unable to parse sub address {:?}", e),
                 };
 
                 Ok(Self::group_3_level(main, mid, sub))
@@ -157,9 +143,7 @@ impl TryFrom<&str> for IndividualAddress {
             Ok(a) => a,
             Err(e) => whatever!("Unable to parse address value {:?}, error {:?}", parts.get(2), e),
         };
-        Ok(Self{
-            area, line, address
-        })
+        Ok(Self { area, line, address })
     }
 }
 
@@ -186,7 +170,11 @@ impl Group3LevelAddress {
         let main = (v & 0b11111 << 11) >> 11;
         let middle = (v & 0b111 << 8) >> 8;
         let sub = v & 0b11111111;
-        Self {main: main as u8, middle: middle as u8, sub: sub as u8}
+        Self {
+            main: main as u8,
+            middle: middle as u8,
+            sub: sub as u8,
+        }
     }
 
     pub fn to_u16(&self) -> u16 {
@@ -248,8 +236,8 @@ mod tests {
                 assert_eq!(addr.area, 1, "Area should be 1");
                 assert_eq!(addr.line, 2, "Line should be 2");
                 assert_eq!(addr.address, 3, "Address should be 3");
-            },
-            _ => panic!("Wrong KnxAddress type")
+            }
+            _ => panic!("Wrong KnxAddress type"),
         }
 
         let addr: Result<KnxAddress, _> = "1.2.3.4".try_into();
@@ -268,8 +256,8 @@ mod tests {
         match addr {
             KnxAddress::Group1Level(addr) => {
                 assert_eq!(addr.main, 1, "Main should be 1");
-            },
-            _ => panic!("Wrong KnxAddress type")
+            }
+            _ => panic!("Wrong KnxAddress type"),
         }
 
         let addr: KnxAddress = "1/2".try_into().expect("Should be able to parse individual address");
@@ -277,8 +265,8 @@ mod tests {
             KnxAddress::Group2Level(addr) => {
                 assert_eq!(addr.main, 1, "Main should be 1");
                 assert_eq!(addr.sub, 2, "Sub should be 2");
-            },
-            _ => panic!("Wrong KnxAddress type")
+            }
+            _ => panic!("Wrong KnxAddress type"),
         }
 
         let addr: KnxAddress = "1/2/3".try_into().expect("Should be able to parse individual address");
@@ -287,8 +275,8 @@ mod tests {
                 assert_eq!(addr.main, 1, "Main should be 1");
                 assert_eq!(addr.middle, 2, "Middle should be 2");
                 assert_eq!(addr.sub, 3, "Sub should be 3");
-            },
-            _ => panic!("Wrong KnxAddress type")
+            }
+            _ => panic!("Wrong KnxAddress type"),
         }
 
         let addr: Result<KnxAddress, _> = "1/2/3/4".try_into();
@@ -297,15 +285,19 @@ mod tests {
 
     #[test]
     fn parse_group_address_from_u8() {
-        let _tests: Vec<()> = vec![
-            (1, 1, 1),
-            (0b10000, 0b100, 0b10000000)
-        ].iter().map(|case| {
-            let addr = Group3LevelAddress {main: case.0, middle: case.1, sub: case.2};
-            let parsed_addr = Group3LevelAddress::from_u16(addr.to_u16());
-            assert_eq!(addr.main, parsed_addr.main, "Main address does not match");
-            assert_eq!(addr.middle, parsed_addr.middle, "Middle address does not match");
-            assert_eq!(addr.sub, parsed_addr.sub, "Sub address does not match");
-        }).collect();
+        let _tests: Vec<()> = vec![(1, 1, 1), (0b10000, 0b100, 0b10000000)]
+            .iter()
+            .map(|case| {
+                let addr = Group3LevelAddress {
+                    main: case.0,
+                    middle: case.1,
+                    sub: case.2,
+                };
+                let parsed_addr = Group3LevelAddress::from_u16(addr.to_u16());
+                assert_eq!(addr.main, parsed_addr.main, "Main address does not match");
+                assert_eq!(addr.middle, parsed_addr.middle, "Middle address does not match");
+                assert_eq!(addr.sub, parsed_addr.sub, "Sub address does not match");
+            })
+            .collect();
     }
 }

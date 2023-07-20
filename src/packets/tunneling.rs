@@ -1,5 +1,5 @@
-use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
-use snafu::{Whatever, ensure_whatever, whatever};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use snafu::{ensure_whatever, whatever, Whatever};
 use std::io::{Cursor, Read};
 
 // Tunneling request
@@ -9,7 +9,7 @@ use std::io::{Cursor, Read};
 pub struct TunnelingRequest {
     pub communication_channel_id: u8,
     pub sequence_nr: u8,
-    pub cemi: Vec<u8>
+    pub cemi: Vec<u8>,
 }
 
 impl TunnelingRequest {
@@ -42,35 +42,35 @@ impl TunnelingRequest {
         match packet_reader.read_u16::<BigEndian>() {
             Ok(code) => {
                 ensure_whatever!(code == 0x0420, "Code should be 0x0420 instead of {:0x?}", code);
-            },
-            Err(e) => whatever!("Unable to read code {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read code {:?}", e),
         };
 
         let size = match packet_reader.read_u16::<BigEndian>() {
             Ok(size) => size,
-            Err(e) => whatever!("Unable to read packet size {:?}", e)
+            Err(e) => whatever!("Unable to read packet size {:?}", e),
         };
 
         match packet_reader.read_u8() {
             Ok(size) => {
                 ensure_whatever!(size == 0x04, "Size should be 0x04 instead of {}", size);
-            },
-            Err(e) => whatever!("Unable to read message code {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read message code {:?}", e),
         };
 
         let communication_channel_id = match packet_reader.read_u8() {
             Ok(id) => id,
-            Err(e) => whatever!("Unable to read communication channel id {:?}", e)
+            Err(e) => whatever!("Unable to read communication channel id {:?}", e),
         };
 
         let sequence_nr = match packet_reader.read_u8() {
             Ok(sequence_nr) => sequence_nr,
-            Err(e) => whatever!("Unable to read sequence number {:?}", e)
+            Err(e) => whatever!("Unable to read sequence number {:?}", e),
         };
 
         match packet_reader.read_u8() {
             Ok(_) => (),
-            Err(e) => whatever!("Unable to read padding {:?}", e)
+            Err(e) => whatever!("Unable to read padding {:?}", e),
         };
 
         let mut cemi = vec![0; size as usize - 10];
@@ -85,7 +85,6 @@ impl TunnelingRequest {
         })
     }
 }
-
 
 // Tunneling Ack
 // 03.08.04 Tunneling section 4.4.7
@@ -107,11 +106,7 @@ impl TunnelingAck {
     }
 
     pub fn packet(&self) -> Vec<u8> {
-        let mut packet = vec![0x06, 0x10,
-            0x04,
-            0x21,
-            0,
-            0x0a];
+        let mut packet = vec![0x06, 0x10, 0x04, 0x21, 0, 0x0a];
         packet.write_u8(4).unwrap();
         packet.write_u8(self.communication_channel_id).unwrap();
         packet.write_u8(self.sequence_nr).unwrap();
@@ -179,15 +174,16 @@ pub struct FeatureSet {
 
 impl FeatureSet {
     pub fn new(communication_channel_id: u8, sequence_nr: u8, feature: KnxIpFeature, value: u8) -> Self {
-        Self {communication_channel_id, sequence_nr, feature, value}
+        Self {
+            communication_channel_id,
+            sequence_nr,
+            feature,
+            value,
+        }
     }
 
     pub fn packet(&self) -> Vec<u8> {
-        let mut packet = vec![0x06, 0x10,
-            0x04,
-            0x24,
-            0,
-            0x0d];
+        let mut packet = vec![0x06, 0x10, 0x04, 0x24, 0, 0x0d];
         packet.write_u8(4).unwrap();
         packet.write_u8(self.communication_channel_id).unwrap();
         packet.write_u8(self.sequence_nr).unwrap();
@@ -197,7 +193,6 @@ impl FeatureSet {
         packet.write_u8(self.value).unwrap();
         packet
     }
-
 }
 
 #[derive(Debug)]
@@ -211,11 +206,7 @@ pub struct FeatureResp {
 
 impl FeatureResp {
     pub fn packet(&self) -> Vec<u8> {
-        let mut packet = vec![0x06, 0x10,
-            0x04,
-            0x24,
-            0,
-            0x0d];
+        let mut packet = vec![0x06, 0x10, 0x04, 0x24, 0, 0x0d];
         packet.write_u8(4).unwrap();
         packet.write_u8(self.communication_channel_id).unwrap();
         packet.write_u8(self.sequence_nr).unwrap();
@@ -282,13 +273,12 @@ impl FeatureResp {
             value,
         })
     }
-
 }
 
 fn verify_header(packet_reader: &mut Cursor<&[u8]>) -> Result<(), Whatever> {
     match packet_reader.read_u8() {
         Ok(size) => ensure_whatever!(size == 6, "Header size should be 6 instead of {}", size),
-        Err(e) => whatever!("Unable to read header size")
+        Err(e) => whatever!("Unable to read header size"),
     };
 
     match packet_reader.read_u8() {
@@ -312,4 +302,3 @@ impl TryFrom<u8> for KnxIpFeature {
         }
     }
 }
-

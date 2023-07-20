@@ -1,6 +1,6 @@
 pub mod addresses;
+pub mod apdu;
 pub mod core;
 pub mod emi;
-pub mod tunneling;
-pub mod apdu;
 pub mod tpdu;
+pub mod tunneling;

@@ -1,7 +1,7 @@
 use super::{addresses::KnxAddress, tpdu::TPDU};
-use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use log::debug;
-use snafu::{Whatever, whatever};
+use snafu::{whatever, Whatever};
 use std::io::{Cursor, Read};
 
 #[derive(Debug)]
@@ -199,7 +199,7 @@ impl CEMI {
             let additional_info_type: CEMIAdditionalInfoType = match packet_reader.read_u8() {
                 Ok(info_type) => match info_type.try_into() {
                     Ok(t) => t,
-                    Err(e) => whatever!("Unknown additional info type {:?}", e)
+                    Err(e) => whatever!("Unknown additional info type {:?}", e),
                 },
                 Err(e) => whatever!("Unable to read addition info type {:?}", e),
             };
@@ -225,7 +225,7 @@ impl CEMI {
             whatever!("Unable to read service information {:?}", e);
         }
 
-        Ok(Self{
+        Ok(Self {
             msg_code,
             additional_infos,
             service_info,
@@ -237,13 +237,13 @@ impl CEMI {
 #[repr(u8)]
 pub enum CEMIMessageCode {
     LBusmonInd = 0x2b, // NL
-    LDataReq = 0x11, // DLL
-    LDataCon = 0x2e, // NL
-    LDataInd = 0x29, // NL
+    LDataReq = 0x11,   // DLL
+    LDataCon = 0x2e,   // NL
+    LDataInd = 0x29,   // NL
 
-    LRawReq = 0x10, // DLL
-    LRawInd = 0x2d, // NL
-    LRawCon = 0x2f, // NL
+    LRawReq = 0x10,      // DLL
+    LRawInd = 0x2d,      // NL
+    LRawCon = 0x2f,      // NL
     LPollDataReq = 0x13, // DLL
     LPollDataCon = 0x25, // NL
 
@@ -252,16 +252,16 @@ pub enum CEMIMessageCode {
     TDataIndividualReq = 0x4a,
     TDataIndividualInd = 0x94,
 
-    MPropReadReq = 0xFC, // CEMI Management Server
-    MPropReadCon = 0xfb, // CEMI Management Client
-    MPropWriteReq = 0xf6, // CEMI Management Client
-    MPropWriteCon = 0xf5, // CEMI Management Server
-    MPropInfoInd = 0xf7, // CEMI Management Server
+    MPropReadReq = 0xFC,        // CEMI Management Server
+    MPropReadCon = 0xfb,        // CEMI Management Client
+    MPropWriteReq = 0xf6,       // CEMI Management Client
+    MPropWriteCon = 0xf5,       // CEMI Management Server
+    MPropInfoInd = 0xf7,        // CEMI Management Server
     MFuncPropCommandReq = 0xf8, // CEMI Management Client
-    MFuncPropStateReq = 0xf9, // CEMI Management Client
+    MFuncPropStateReq = 0xf9,   // CEMI Management Client
     MFuncPropCommandCon = 0xfa, // CEMI Management Server
-    MResetReq = 0xf1, // CEMI Management Client
-    MResetInd = 0xf0, // CEMI Management Server
+    MResetReq = 0xf1,           // CEMI Management Client
+    MResetInd = 0xf0,           // CEMI Management Server
 }
 
 #[derive(Debug)]
@@ -301,8 +301,7 @@ impl TryFrom<u8> for CEMIAdditionalInfoType {
             x if x == CEMIAdditionalInfoType::PreambleAndPostamble as u8 => Ok(CEMIAdditionalInfoType::PreambleAndPostamble),
             x if x == CEMIAdditionalInfoType::RFFastAckInfo as u8 => Ok(CEMIAdditionalInfoType::RFFastAckInfo),
             x if x == CEMIAdditionalInfoType::ManufacturerSpecificData as u8 => Ok(CEMIAdditionalInfoType::ManufacturerSpecificData),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
-

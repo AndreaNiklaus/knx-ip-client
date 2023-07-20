@@ -94,8 +94,6 @@ impl TPDU {
     pub fn packet(&self) -> Vec<u8> {
         let mut packet = self.apdu.packet();
 
-
-
         packet
     }
 }
