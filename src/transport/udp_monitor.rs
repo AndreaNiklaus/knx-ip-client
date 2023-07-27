@@ -1,28 +1,28 @@
-use crate::packets::emi::LDataInd;
-use crate::packets::emi::LDataCon;
-use crate::packets::emi::CEMIMessageCode;
-use crate::packets::tunneling::FeatureResp;
-use crate::packets::tunneling::KnxIpFeature;
-use crate::packets::tunneling::FeatureSet;
+use crate::packets::core::ConnectionRequest;
+use crate::packets::core::ConnectionResponse;
 use crate::packets::core::DisconnectRequest;
 use crate::packets::core::DisconnectResponse;
+use crate::packets::core::HPAI;
+use crate::packets::emi::CEMIMessageCode;
+use crate::packets::emi::LDataCon;
+use crate::packets::emi::LDataInd;
+use crate::packets::emi::CEMI;
+use crate::packets::tunneling::FeatureResp;
+use crate::packets::tunneling::FeatureSet;
+use crate::packets::tunneling::KnxIpFeature;
 use crate::packets::tunneling::TunnelingAck;
 use crate::packets::tunneling::TunnelingRequest;
-use crate::packets::core::ConnectionResponse;
-use std::io::Cursor;
-use crate::packets::core::ConnectionRequest;
+use log::debug;
 use log::info;
 use log::warn;
-use tokio::net::ToSocketAddrs;
-use std::net::SocketAddr;
-use log::debug;
-use snafu::Whatever;
 use snafu::whatever;
-use crate::packets::emi::CEMI;
-use tokio::sync::{Mutex, mpsc};
+use snafu::Whatever;
+use std::io::Cursor;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::ToSocketAddrs;
 use tokio::net::UdpSocket;
-use crate::packets::core::HPAI;
+use tokio::sync::{mpsc, Mutex};
 
 enum TunnelingResponse {
     TunnelingRequest(TunnelingRequest),
@@ -127,7 +127,6 @@ impl UdpMonitorTransport {
             }
         });
 
-
         Ok(Self {
             socket,
             communication_channel_id: connection.get_communication_channel_id(),
@@ -160,7 +159,6 @@ impl UdpMonitorTransport {
         Ok(())
     }
 
-
     pub async fn disconnect(&self) -> Result<u8, Whatever> {
         let req = DisconnectRequest::new(self.communication_channel_id, self.control_endpoint.clone()).packet();
         debug!("Request disconnect for connection {}", self.communication_channel_id);
@@ -174,7 +172,7 @@ impl UdpMonitorTransport {
             Ok(resp) => {
                 debug!("Disconnect response status {}", resp.status);
                 Ok(resp.status)
-            },
+            }
             Err(e) => whatever!("Unable to request disconnection for id {}, {:?}", self.communication_channel_id, e),
         }
     }
@@ -226,7 +224,7 @@ impl UdpMonitor {
 
         transport.lock().await.set_feature(KnxIpFeature::InfoServiceEnable, 1).await?;
 
-        Ok(Self {transport})
+        Ok(Self { transport })
     }
 
     pub async fn disconnect(&self) -> Result<u8, Whatever> {
@@ -240,12 +238,12 @@ impl UdpMonitor {
                     let data_con = LDataCon::from_cemi(cemi);
                     debug!("Parsed confirmation cEMI {:?}", data_con);
                     continue;
-                },
+                }
                 Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
                     let data_ind = LDataInd::from_cemi(cemi)?;
                     debug!("Parsed indication cEMI {:?}", data_ind);
                     return Ok(data_ind);
-                },
+                }
                 Some(cemi) if cemi.msg_code == CEMIMessageCode::LBusmonInd as u8 => {
                     debug!("To parse busmod {:0x?}", cemi.service_info);
                     let data_ind = LDataInd::from_cemi(cemi)?;

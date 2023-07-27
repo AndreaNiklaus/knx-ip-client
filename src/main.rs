@@ -1,7 +1,10 @@
-use std::sync::Arc;
-use knx_ip_client::{transport::udp::UdpClient, dp_types::{PdtKnxFloat, PdtKnxScaledValue, PdtKnxBit}};
-use log::{info, debug, warn};
+use knx_ip_client::{
+    dp_types::{PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue},
+    transport::udp::UdpClient,
+};
+use log::{debug, info, warn};
 use snafu::Whatever;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Whatever> {

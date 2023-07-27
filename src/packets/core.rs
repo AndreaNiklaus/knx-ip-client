@@ -1,6 +1,9 @@
-use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
-use snafu::{Whatever, ensure_whatever, whatever};
-use std::{net::{SocketAddrV4, Ipv4Addr}, io::Cursor};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use snafu::{ensure_whatever, whatever, Whatever};
+use std::{
+    io::Cursor,
+    net::{Ipv4Addr, SocketAddrV4},
+};
 
 use super::addresses::IndividualAddress;
 
@@ -23,17 +26,15 @@ pub struct CRI {
 impl CRI {
     pub fn tunnel_linklayer() -> Self {
         Self {
-            connection_type: TUNNEL_LINKLAYER
+            connection_type: TUNNEL_LINKLAYER,
         }
     }
     pub fn tunnel_raw() -> Self {
-        Self {
-            connection_type: TUNNEL_RAW
-        }
+        Self { connection_type: TUNNEL_RAW }
     }
     pub fn tunnel_busmonitor() -> Self {
         Self {
-            connection_type: TUNNEL_BUSMONITOR
+            connection_type: TUNNEL_BUSMONITOR,
         }
     }
 
@@ -55,23 +56,25 @@ impl CRD {
             Ok(size) => {
                 ensure_whatever!(size == 4, "Connection Response Data Block should have length 4 instead of {}", size);
                 size
-            },
-            Err(e) => whatever!("Unable to read CRD packet size {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read CRD packet size {:?}", e),
         };
         let tunnel_connection = match packet_reader.read_u8() {
             Ok(tunnel_connection) => {
-                ensure_whatever!(tunnel_connection == 4, "Connection Response Data Block should have connection type 4 (TUNNELING) instead of {}", tunnel_connection);
+                ensure_whatever!(
+                    tunnel_connection == 4,
+                    "Connection Response Data Block should have connection type 4 (TUNNELING) instead of {}",
+                    tunnel_connection
+                );
                 tunnel_connection
-            },
-            Err(e) => whatever!("Unable to read CRD tunnel connection {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read CRD tunnel connection {:?}", e),
         };
         let knx_individual_address = match packet_reader.read_u16::<BigEndian>() {
             Ok(addr) => IndividualAddress::from_u16(addr),
-            Err(e) => whatever!("Unable to read CRD KNX individual address {:?}", e)
+            Err(e) => whatever!("Unable to read CRD KNX individual address {:?}", e),
         };
-        Ok(Self {
-            knx_individual_address
-        })
+        Ok(Self { knx_individual_address })
     }
 
     pub fn packet(&self) -> Vec<u8> {
@@ -80,7 +83,6 @@ impl CRD {
         packet
     }
 }
-
 
 // Connection request
 // 03.08.02 Core section 7.8.1
@@ -152,23 +154,27 @@ impl ConnectionResponse {
             Ok(header_size) => {
                 ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
                 header_size
-            },
-            Err(e) => whatever!("Unable to read header size {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read header size {:?}", e),
         };
 
         let version = match packet_reader.read_u8() {
             Ok(version) => {
                 ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
                 version
-            },
+            }
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
         };
 
         let connect_response = match packet_reader.read_u16::<BigEndian>() {
             Ok(connect_response) => {
-                ensure_whatever!(connect_response == 0x0206, "Connect response should be 0x0206 instead of {:2X}", connect_response);
+                ensure_whatever!(
+                    connect_response == 0x0206,
+                    "Connect response should be 0x0206 instead of {:2X}",
+                    connect_response
+                );
                 connect_response
-            },
+            }
             Err(e) => whatever!("Unable to read Connect Response {:?}", e),
         };
 
@@ -176,7 +182,7 @@ impl ConnectionResponse {
             Ok(size) => {
                 ensure_whatever!(size >= 8, "Packet size should greather than 8, received size {}", size);
                 size
-            },
+            }
             Err(e) => whatever!("Unable to read packet size {:?}", e),
         };
 
@@ -191,10 +197,16 @@ impl ConnectionResponse {
         };
 
         match status {
-            E_CONNECTION_TYPE => whatever!("Target KNX/IP device does not support requested connection type"),
+            E_CONNECTION_TYPE => {
+                whatever!("Target KNX/IP device does not support requested connection type")
+            }
             E_CONNECTION_OPTION => whatever!("Target KNX/IP device does not support one or more requested connection options"),
-            E_NO_MORE_CONNECTIONS => whatever!("No more connections available on target KNX/IP device"),
-            E_TUNNELING_LAYER => whatever!("Target KNX/IP device does not support requested tunneling layer"),
+            E_NO_MORE_CONNECTIONS => {
+                whatever!("No more connections available on target KNX/IP device")
+            }
+            E_TUNNELING_LAYER => {
+                whatever!("Target KNX/IP device does not support requested tunneling layer")
+            }
             _ => (),
         }
 
@@ -205,7 +217,7 @@ impl ConnectionResponse {
             communication_channel_id,
             status,
             data_endpoint,
-            crd
+            crd,
         })
     }
 
@@ -216,7 +228,6 @@ impl ConnectionResponse {
         packet
     }
 }
-
 
 // Connectionstate Request
 // 03.08.02 Core section 7.8.3
@@ -247,21 +258,21 @@ impl ConnectionstateRequest {
             Ok(header_size) => {
                 ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
                 header_size
-            },
-            Err(e) => whatever!("Unable to read header size {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read header size {:?}", e),
         };
 
         match packet_reader.read_u8() {
             Ok(version) => {
                 ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
-            },
+            }
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
         };
 
         match packet_reader.read_u16::<BigEndian>() {
             Ok(code) => {
                 ensure_whatever!(code == 0x0207, "Connect request should be 0x0207 instead of {:2X}", code);
-            },
+            }
             Err(e) => whatever!("Unable to read Connectstate request code {:?}", e),
         };
 
@@ -320,15 +331,15 @@ impl ConnectionstateResponse {
             Ok(header_size) => {
                 ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
                 header_size
-            },
-            Err(e) => whatever!("Unable to read header size {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read header size {:?}", e),
         };
 
         let version = match packet_reader.read_u8() {
             Ok(version) => {
                 ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
                 version
-            },
+            }
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
         };
 
@@ -336,7 +347,7 @@ impl ConnectionstateResponse {
             Ok(code) => {
                 ensure_whatever!(code == 0x0208, "Connect response should be 0x0208 instead of {:2X}", code);
                 code
-            },
+            }
             Err(e) => whatever!("Unable to read Connectstate Response {:?}", e),
         };
 
@@ -344,7 +355,7 @@ impl ConnectionstateResponse {
             Ok(size) => {
                 ensure_whatever!(size == 8, "Packet size should be 8, received size {}", size);
                 size
-            },
+            }
             Err(e) => whatever!("Unable to read packet size {:?}", e),
         };
 
@@ -407,7 +418,6 @@ impl DisconnectRequest {
     }
 }
 
-
 // Disconnect Response
 // 03.08.02 Core section 7.8.6
 //
@@ -423,15 +433,15 @@ impl DisconnectResponse {
             Ok(header_size) => {
                 ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
                 header_size
-            },
-            Err(e) => whatever!("Unable to read header size {:?}", e)
+            }
+            Err(e) => whatever!("Unable to read header size {:?}", e),
         };
 
         let version = match packet_reader.read_u8() {
             Ok(version) => {
                 ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
                 version
-            },
+            }
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
         };
 
@@ -439,7 +449,7 @@ impl DisconnectResponse {
             Ok(code) => {
                 ensure_whatever!(code == 0x020a, "Disconnect response should be 0x020A instead of {:2X}", code);
                 code
-            },
+            }
             Err(e) => whatever!("Unable to read Disconnect Response {:?}", e),
         };
 
@@ -447,7 +457,7 @@ impl DisconnectResponse {
             Ok(size) => {
                 ensure_whatever!(size == 8, "Packet size should be 8, received size {}", size);
                 size
-            },
+            }
             Err(e) => whatever!("Unable to read packet size {:?}", e),
         };
 
@@ -513,7 +523,7 @@ impl HPAI {
             Ok(size) => {
                 ensure_whatever!(size == 8, "HPAI size must be 8 instead of {}", size);
                 size
-            },
+            }
             Err(e) => whatever!("Unable to read HPAI size {:?}", e),
         };
 
@@ -550,4 +560,3 @@ impl HPAI {
         })
     }
 }
-

@@ -15,10 +15,7 @@ pub enum APDUData {
 
 impl APDU {
     pub fn new(apci: APCI, data: APDUData) -> Self {
-        Self {
-            apci,
-            data,
-        }
+        Self { apci, data }
     }
 
     pub fn group_value_read() -> Self {
@@ -29,14 +26,10 @@ impl APDU {
     }
 
     pub fn group_value_write(data: Vec<u8>) -> Self {
-        let data = if data.len() == 1 {
-            APDUData::Small(data[0])
-        } else {
-            APDUData::Big(data)
-        };
+        let data = if data.len() == 1 { APDUData::Small(data[0]) } else { APDUData::Big(data) };
         Self {
             apci: APCI::a_group_value_write(),
-            data
+            data,
         }
     }
 
@@ -50,7 +43,6 @@ impl APDU {
         apci_packet
     }
 }
-
 
 // Application Layer Protocol Control Information (APCI)
 // 03.03.07 Application Layer chapter 2
@@ -70,10 +62,7 @@ impl APCI {
     }
 
     pub fn a_group_value_write() -> Self {
-        Self {
-            code: 2,
-            extended_code: None,
-        }
+        Self { code: 2, extended_code: None }
     }
 
     pub fn packet(&self) -> Vec<u8> {
