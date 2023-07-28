@@ -61,7 +61,7 @@ async fn main() -> Result<(), Whatever> {
             println!("⏵⏵ Service Family: {:?} Version: {:?}", family.service_family, family.version);
         }
 
-        println!("");
+        println!();
     }
 
     Ok(())

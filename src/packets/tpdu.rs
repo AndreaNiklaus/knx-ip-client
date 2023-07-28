@@ -7,11 +7,11 @@ use super::apdu::APDU;
 //
 #[derive(Debug)]
 pub struct TPDU {
-    address_type: TpduAddressType,
-    kind: TpduKind,
-    numbered: bool,
-    sequence_number: u8,
-    apdu: APDU,
+    pub address_type: TpduAddressType,
+    pub kind: TpduKind,
+    pub numbered: bool,
+    pub sequence_number: u8,
+    pub apdu: APDU,
 }
 
 #[derive(Debug)]
@@ -92,8 +92,6 @@ impl TPDU {
     }
 
     pub fn packet(&self) -> Vec<u8> {
-        let mut packet = self.apdu.packet();
-
-        packet
+        self.apdu.packet()
     }
 }

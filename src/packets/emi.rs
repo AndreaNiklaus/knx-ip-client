@@ -6,9 +6,9 @@ use std::io::{Cursor, Read};
 
 #[derive(Debug)]
 pub struct LDataCon {
-    cemi: CEMI,
-    l_data: LData,
-    confirm: bool,
+    pub cemi: CEMI,
+    pub l_data: LData,
+    pub confirm: bool,
 }
 
 impl LDataCon {
@@ -18,7 +18,7 @@ impl LDataCon {
             Ok(control1) => control1,
             Err(e) => whatever!("Unable to read control 1 byte {:?}", e),
         };
-        let control2 = match reader.read_u8() {
+        let _control2 = match reader.read_u8() {
             Ok(control2) => control2,
             Err(e) => whatever!("Unable to read control 2 byte {:?}", e),
         };
@@ -76,7 +76,7 @@ impl LDataInd {
             Ok(control1) => control1,
             Err(e) => whatever!("Unable to read control 1 byte {:?}", e),
         };
-        let control2 = match reader.read_u8() {
+        let _control2 = match reader.read_u8() {
             Ok(control2) => control2,
             Err(e) => whatever!("Unable to read control 2 byte {:?}", e),
         };
@@ -182,7 +182,7 @@ pub struct CEMI {
 }
 
 impl CEMI {
-    pub fn from_packet(mut packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
+    pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
         let msg_code = match packet_reader.read_u8() {
             Ok(code) => code,
             Err(e) => whatever!("Unable to read message code {:?}", e),
@@ -281,8 +281,8 @@ pub enum CEMIAdditionalInfoType {
 
 #[derive(Debug)]
 pub struct CEMIAdditionalInfo {
-    info_type: CEMIAdditionalInfoType,
-    value: Vec<u8>,
+    pub info_type: CEMIAdditionalInfoType,
+    pub value: Vec<u8>,
 }
 
 impl TryFrom<u8> for CEMIAdditionalInfoType {

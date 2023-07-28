@@ -278,12 +278,12 @@ impl FeatureResp {
 fn verify_header(packet_reader: &mut Cursor<&[u8]>) -> Result<(), Whatever> {
     match packet_reader.read_u8() {
         Ok(size) => ensure_whatever!(size == 6, "Header size should be 6 instead of {}", size),
-        Err(e) => whatever!("Unable to read header size"),
+        Err(_e) => whatever!("Unable to read header size"),
     };
 
     match packet_reader.read_u8() {
         Ok(version) => ensure_whatever!(version == 0x10, "Version should be 0x10 instead of {:0x?}", version),
-        Err(e) => whatever!("Unable to read header version"),
+        Err(_e) => whatever!("Unable to read header version"),
     };
 
     Ok(())

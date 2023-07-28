@@ -120,14 +120,14 @@ pub struct CRD {
 
 impl CRD {
     pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
-        let size = match packet_reader.read_u8() {
+        let _size = match packet_reader.read_u8() {
             Ok(size) => {
                 ensure_whatever!(size == 4, "Connection Response Data Block should have length 4 instead of {}", size);
                 size
             }
             Err(e) => whatever!("Unable to read CRD packet size {:?}", e),
         };
-        let tunnel_connection = match packet_reader.read_u8() {
+        let _tunnel_connection = match packet_reader.read_u8() {
             Ok(tunnel_connection) => {
                 ensure_whatever!(
                     tunnel_connection == 4,
@@ -217,7 +217,7 @@ impl ConnectionResponse {
     pub fn get_data_endpoint(&self) -> HPAI {
         self.data_endpoint.clone()
     }
-    pub fn from_packet(mut packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
+    pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
         let header_size = match packet_reader.read_u8() {
             Ok(header_size) => {
                 ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
@@ -226,7 +226,7 @@ impl ConnectionResponse {
             Err(e) => whatever!("Unable to read header size {:?}", e),
         };
 
-        let version = match packet_reader.read_u8() {
+        let _version = match packet_reader.read_u8() {
             Ok(version) => {
                 ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
                 version
@@ -234,7 +234,7 @@ impl ConnectionResponse {
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
         };
 
-        let connect_response = match packet_reader.read_u16::<BigEndian>() {
+        let _connect_response = match packet_reader.read_u16::<BigEndian>() {
             Ok(connect_response) => {
                 ensure_whatever!(
                     connect_response == 0x0206,
@@ -246,7 +246,7 @@ impl ConnectionResponse {
             Err(e) => whatever!("Unable to read Connect Response {:?}", e),
         };
 
-        let size = match packet_reader.read_u16::<BigEndian>() {
+        let _size = match packet_reader.read_u16::<BigEndian>() {
             Ok(size) => {
                 ensure_whatever!(size >= 8, "Packet size should greather than 8, received size {}", size);
                 size
@@ -278,8 +278,8 @@ impl ConnectionResponse {
             _ => (),
         }
 
-        let data_endpoint = HPAI::from_packet(&mut packet_reader)?;
-        let crd = CRD::from_packet(&mut packet_reader)?;
+        let data_endpoint = HPAI::from_packet(packet_reader)?;
+        let crd = CRD::from_packet(packet_reader)?;
 
         Ok(Self {
             communication_channel_id,
@@ -344,7 +344,7 @@ impl ConnectionstateRequest {
             Err(e) => whatever!("Unable to read Connectstate request code {:?}", e),
         };
 
-        let size = match packet_reader.read_u16::<BigEndian>() {
+        let _size = match packet_reader.read_u16::<BigEndian>() {
             Ok(size) => size,
             Err(e) => whatever!("Unable to read packet size {:?}", e),
         };
@@ -394,7 +394,7 @@ pub struct ConnectionstateResponse {
 }
 
 impl ConnectionstateResponse {
-    pub fn from_packet(mut packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
+    pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
         let header_size = match packet_reader.read_u8() {
             Ok(header_size) => {
                 ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
@@ -403,7 +403,7 @@ impl ConnectionstateResponse {
             Err(e) => whatever!("Unable to read header size {:?}", e),
         };
 
-        let version = match packet_reader.read_u8() {
+        let _version = match packet_reader.read_u8() {
             Ok(version) => {
                 ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
                 version
@@ -411,7 +411,7 @@ impl ConnectionstateResponse {
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
         };
 
-        let connectionstate_response = match packet_reader.read_u16::<BigEndian>() {
+        let _connectionstate_response = match packet_reader.read_u16::<BigEndian>() {
             Ok(code) => {
                 ensure_whatever!(code == 0x0208, "Connect response should be 0x0208 instead of {:2X}", code);
                 code
@@ -419,7 +419,7 @@ impl ConnectionstateResponse {
             Err(e) => whatever!("Unable to read Connectstate Response {:?}", e),
         };
 
-        let size = match packet_reader.read_u16::<BigEndian>() {
+        let _size = match packet_reader.read_u16::<BigEndian>() {
             Ok(size) => {
                 ensure_whatever!(size == 8, "Packet size should be 8, received size {}", size);
                 size
@@ -496,7 +496,7 @@ pub struct DisconnectResponse {
 }
 
 impl DisconnectResponse {
-    pub fn from_packet(mut packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
+    pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
         let header_size = match packet_reader.read_u8() {
             Ok(header_size) => {
                 ensure_whatever!(header_size == 6, "Header size should be 6 instead of {}", header_size);
@@ -505,7 +505,7 @@ impl DisconnectResponse {
             Err(e) => whatever!("Unable to read header size {:?}", e),
         };
 
-        let version = match packet_reader.read_u8() {
+        let _version = match packet_reader.read_u8() {
             Ok(version) => {
                 ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
                 version
@@ -513,7 +513,7 @@ impl DisconnectResponse {
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
         };
 
-        let connectionstate_response = match packet_reader.read_u16::<BigEndian>() {
+        let _connectionstate_response = match packet_reader.read_u16::<BigEndian>() {
             Ok(code) => {
                 ensure_whatever!(code == 0x020a, "Disconnect response should be 0x020A instead of {:2X}", code);
                 code
@@ -521,7 +521,7 @@ impl DisconnectResponse {
             Err(e) => whatever!("Unable to read Disconnect Response {:?}", e),
         };
 
-        let size = match packet_reader.read_u16::<BigEndian>() {
+        let _size = match packet_reader.read_u16::<BigEndian>() {
             Ok(size) => {
                 ensure_whatever!(size == 8, "Packet size should be 8, received size {}", size);
                 size
@@ -691,8 +691,8 @@ impl HPAI {
         packet
     }
 
-    pub fn from_packet(mut packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
-        let size = match packet_reader.read_u8() {
+    pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
+        let _size = match packet_reader.read_u8() {
             Ok(size) => {
                 ensure_whatever!(size == 8, "HPAI size must be 8 instead of {}", size);
                 size
@@ -736,6 +736,7 @@ impl HPAI {
 
 /// 03.08.02 Core section 7.5.4.1
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum DescriptionTypeCode {
     DeviceInfo = 0x01,
     SupportedServiceFamilies = 0x02,
@@ -756,7 +757,7 @@ impl TryFrom<u8> for DescriptionTypeCode {
             0x04 => Ok(Self::IpCurrentConfig),
             0x05 => Ok(Self::KNXAddresses),
             0xFE => Ok(Self::ManufacturerData),
-            _ => Err(whatever!("Unknown DescriptionTypeCode {}", value)),
+            _ => whatever!("Unknown DescriptionTypeCode {}", value),
         }
     }
 }
@@ -848,6 +849,7 @@ impl DIB {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum KnxMedium {
     TP1 = 0x02,
     PL110 = 0x03,
@@ -864,7 +866,7 @@ impl TryFrom<u8> for KnxMedium {
             0x03 => Ok(Self::PL110),
             0x10 => Ok(Self::RF),
             0x20 => Ok(Self::IP),
-            _ => Err(whatever!("Unknown KnxMedium {}", value)),
+            _ => whatever!("Unknown KnxMedium {}", value),
         }
     }
 }
@@ -896,6 +898,7 @@ pub struct DeviceInformationDIB {
 }
 
 impl DeviceInformationDIB {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         structure_length: u8,
         knx_medium: KnxMedium,
