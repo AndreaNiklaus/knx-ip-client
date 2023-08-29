@@ -1,8 +1,8 @@
 use knx_ip_client::{
-    dp_types::{PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue},
+    dp_types::{PdtKnxBit, PdtKnxFloat},
     transport::udp::UdpClient,
 };
-use log::{debug, info, warn};
+use log::{debug, info};
 use snafu::Whatever;
 use std::sync::Arc;
 

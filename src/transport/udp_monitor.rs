@@ -33,7 +33,7 @@ enum TunnelingResponse {
 
 struct UdpMonitorTransport {
     socket: Arc<UdpSocket>,
-    communication_channel_id: u8,
+    pub communication_channel_id: u8,
     control_endpoint: HPAI,
     sequence_nr: Arc<Mutex<u8>>,
     rx: Arc<Mutex<mpsc::Receiver<CEMI>>>,
@@ -143,10 +143,6 @@ impl UdpMonitorTransport {
         num
     }
 
-    pub fn get_communication_channel_id(&self) -> u8 {
-        self.communication_channel_id
-    }
-
     pub async fn set_feature(&self, feature: KnxIpFeature, value: u8) -> Result<(), Whatever> {
         let sequence_nr = self.get_next_sequence_nr().await;
         let req = FeatureSet::new(self.communication_channel_id, sequence_nr, feature, value);
@@ -181,25 +177,25 @@ impl UdpMonitorTransport {
         debug!("TunnelingResponse: {:02x?}", resp);
         let response_code = resp.get(2..4);
         if response_code.is_some() {
-            if response_code == Some(&vec![0x04, 0x20]) {
+            if response_code == Some(&[0x04, 0x20]) {
                 debug!("Received tunneling request");
                 let mut resp_cursor = Cursor::new(resp.as_slice());
                 let resp = TunnelingRequest::from_packet(&mut resp_cursor)?;
                 debug!("Parsed tunneling request {:?}", resp);
                 Ok(TunnelingResponse::TunnelingRequest(resp))
-            } else if response_code == Some(&vec![0x04, 0x21]) {
+            } else if response_code == Some(&[0x04, 0x21]) {
                 debug!("Received tunneling ack");
                 let mut resp_cursor = Cursor::new(resp.as_slice());
                 let resp = TunnelingAck::from_packet(&mut resp_cursor)?;
                 debug!("Parsed tunneling ack {:?}", resp);
                 Ok(TunnelingResponse::TunnelingAck(resp))
-            } else if response_code == Some(&vec![0x04, 0x23]) {
+            } else if response_code == Some(&[0x04, 0x23]) {
                 debug!("Received feature response");
                 let mut resp_cursor = Cursor::new(resp.as_slice());
                 let resp = FeatureResp::from_packet(&mut resp_cursor)?;
                 debug!("Parsed feature response {:?}", resp);
                 Ok(TunnelingResponse::FeatureResponse(resp))
-            } else if response_code == Some(&vec![0x02, 0x0a]) {
+            } else if response_code == Some(&[0x02, 0x0a]) {
                 debug!("Received disconnection response");
                 let mut resp_cursor = Cursor::new(resp.as_slice());
                 let resp = DisconnectResponse::from_packet(&mut resp_cursor)?;

@@ -42,7 +42,7 @@ impl KnxAddress {
 impl TryFrom<&str> for KnxAddress {
     type Error = Whatever;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let is_individual = value.contains(".");
+        let is_individual = value.contains('.');
 
         if is_individual {
             let addr = IndividualAddress::try_from(value)?;
@@ -50,7 +50,7 @@ impl TryFrom<&str> for KnxAddress {
         } else {
             let parts: Vec<&str> = value.split('/').collect();
             if parts.len() == 1 {
-                let main = parts.get(0).unwrap();
+                let main = parts.first().unwrap();
                 let main = match main.parse::<u16>() {
                     Ok(main) => main,
                     Err(e) => whatever!("Unable to parse main address {} {:?}", main, e),
@@ -58,7 +58,7 @@ impl TryFrom<&str> for KnxAddress {
 
                 Ok(Self::group_1_level(main))
             } else if parts.len() == 2 {
-                let main = parts.get(0).unwrap();
+                let main = parts.first().unwrap();
                 let main = match main.parse::<u8>() {
                     Ok(main) => main,
                     Err(e) => whatever!("Unable to parse main address {:?}", e),
@@ -71,7 +71,7 @@ impl TryFrom<&str> for KnxAddress {
 
                 Ok(Self::group_2_level(main, sub))
             } else if parts.len() == 3 {
-                let main = parts.get(0).unwrap();
+                let main = parts.first().unwrap();
                 let main = match main.parse::<u8>() {
                     Ok(main) => main,
                     Err(e) => whatever!("Unable to parse main address {:?}", e),
@@ -105,8 +105,8 @@ pub struct IndividualAddress {
 impl IndividualAddress {
     pub fn to_u16(&self) -> u16 {
         let mut addr = 0u16;
-        addr |= (self.area as u16) << 12 as u16;
-        addr |= (self.line as u16) << 8 as u16;
+        addr |= (self.area as u16) << 12_u16;
+        addr |= (self.line as u16) << 8_u16;
         addr |= (self.address) as u16;
 
         addr
@@ -132,9 +132,9 @@ impl TryFrom<&str> for IndividualAddress {
         if parts.len() != 3 {
             whatever!("Individial address should be in the format area.line.address instead of {:?}", value);
         }
-        let area = match parts.get(0).unwrap().parse::<u8>() {
+        let area = match parts.first().unwrap().parse::<u8>() {
             Ok(a) => a,
-            Err(e) => whatever!("Unable to parse area value {:?}, error {:?}", parts.get(0), e),
+            Err(e) => whatever!("Unable to parse area value {:?}, error {:?}", parts.first(), e),
         };
         let line = match parts.get(1).unwrap().parse::<u8>() {
             Ok(l) => l,
@@ -180,8 +180,8 @@ impl Group3LevelAddress {
 
     pub fn to_u16(&self) -> u16 {
         let mut addr = 0u16;
-        addr |= (self.main as u16) << 11 as u16;
-        addr |= (self.middle as u16) << 8 as u16;
+        addr |= (self.main as u16) << 11_u16;
+        addr |= (self.middle as u16) << 8_u16;
         addr |= (self.sub) as u16;
 
         addr
@@ -202,7 +202,7 @@ impl fmt::Debug for Group2LevelAddress {
 impl Group2LevelAddress {
     pub fn to_u16(&self) -> u16 {
         let mut addr = 0u16;
-        addr |= (self.main as u16) << 8 as u16;
+        addr |= (self.main as u16) << 8_u16;
         addr |= (self.sub) as u16;
 
         addr

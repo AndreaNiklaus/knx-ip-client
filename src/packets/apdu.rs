@@ -37,7 +37,7 @@ impl APDU {
         let mut apci_packet = self.apci.packet();
         match &self.data {
             APDUData::Small(data) => apci_packet[1] |= data & 0x3f,
-            APDUData::Big(data) => apci_packet.extend_from_slice(&data),
+            APDUData::Big(data) => apci_packet.extend_from_slice(data),
         }
 
         apci_packet

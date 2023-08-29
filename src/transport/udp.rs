@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{io::Cursor, net::SocketAddr};
 use tokio::select;
-use tokio::time::timeout;
 
 use log::{debug, info, warn};
 use snafu::{whatever, Whatever};
@@ -31,7 +30,7 @@ enum TunnelingResponse {
 
 struct UdpTransport {
     socket: Arc<UdpSocket>,
-    communication_channel_id: u8,
+    pub communication_channel_id: u8,
     control_endpoint: HPAI,
     sequence_nr: Arc<Mutex<u8>>,
     rx: Arc<Mutex<mpsc::Receiver<CEMI>>>,
@@ -134,10 +133,6 @@ impl UdpTransport {
         num
     }
 
-    pub fn get_communication_channel_id(&self) -> u8 {
-        self.communication_channel_id
-    }
-
     pub async fn get_connectionstate(&self) -> TransportResult<ConnectionstateResponse> {
         let req = ConnectionstateRequest::new(self.communication_channel_id, self.control_endpoint.clone());
         if let Err(e) = self.socket.send(&req.packet()).await {
@@ -199,19 +194,19 @@ impl UdpTransport {
         debug!("TunnelingResponse: {:02x?}", resp);
         let response_code = resp.get(2..4);
         if response_code.is_some() {
-            if response_code == Some(&vec![0x04, 0x20]) {
+            if response_code == Some(&[0x04, 0x20]) {
                 debug!("Received tunneling request");
                 let mut resp_cursor = Cursor::new(resp.as_slice());
                 let resp = TunnelingRequest::from_packet(&mut resp_cursor)?;
                 debug!("Parsed tunneling request {:?}", resp);
                 Ok(TunnelingResponse::TunnelingRequest(resp))
-            } else if response_code == Some(&vec![0x04, 0x21]) {
+            } else if response_code == Some(&[0x04, 0x21]) {
                 debug!("Received tunneling ack");
                 let mut resp_cursor = Cursor::new(resp.as_slice());
                 let resp = TunnelingAck::from_packet(&mut resp_cursor)?;
                 debug!("Parsed tunneling ack {:?}", resp);
                 Ok(TunnelingResponse::TunnelingAck(resp))
-            } else if response_code == Some(&vec![0x02, 0x0a]) {
+            } else if response_code == Some(&[0x02, 0x0a]) {
                 debug!("Received disconnection response");
                 let mut resp_cursor = Cursor::new(resp.as_slice());
                 let resp = DisconnectResponse::from_packet(&mut resp_cursor)?;
@@ -363,7 +358,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connect() {
-        env_logger::try_init();
+        let _ = env_logger::try_init();
         let mock_server = UdpSocket::bind("0.0.0.0:0").await.expect("Unable to bind to local UDP port");
         let addr = mock_server.local_addr().expect("Mock server should have a valid local address");
         tokio::spawn(async move {
@@ -382,12 +377,12 @@ mod tests {
         });
 
         let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
-        assert_eq!(client.get_communication_channel_id(), 8, "Communication channel id should be 8");
+        assert_eq!(client.communication_channel_id, 8, "Communication channel id should be 8");
     }
 
     #[tokio::test]
     async fn test_get_connectionstate() {
-        env_logger::try_init();
+        let _ = env_logger::try_init();
         let mock_server = UdpSocket::bind("0.0.0.0:0").await.expect("Unable to bind to local UDP port");
         let addr = mock_server.local_addr().expect("Mock server should have a valid local address");
 
@@ -426,8 +421,7 @@ mod tests {
         let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
         let state = client.get_connectionstate().await.expect("Should be able to request connectionstate");
         assert_eq!(
-            state.communication_channel_id,
-            client.get_communication_channel_id(),
+            state.communication_channel_id, client.communication_channel_id,
             "Communication channel id should match client value"
         );
         assert_eq!(state.status, 0, "Connection state should be ok");

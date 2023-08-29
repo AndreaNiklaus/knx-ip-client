@@ -1,8 +1,8 @@
 use snafu::{whatever, Whatever};
 
 pub struct PdtKnxScaledValue {
-    code: String,
-    unit: String,
+    pub code: String,
+    pub unit: String,
     value: u8,
 }
 
@@ -22,8 +22,8 @@ impl PdtKnxScaledValue {
         (self.value - 1) as f32 / 2.54
     }
 
-    pub fn from_bytes(b: &Vec<u8>) -> Self {
-        let value = b.get(0).unwrap_or(&0);
+    pub fn from_bytes(b: &[u8]) -> Self {
+        let value = b.first().unwrap_or(&0);
         Self {
             code: "5.001".to_string(),
             unit: "%".to_string(),
@@ -37,8 +37,8 @@ impl PdtKnxScaledValue {
 }
 
 pub struct PdtKnxInt {
-    code: String,
-    unit: String,
+    pub code: String,
+    pub unit: String,
     value: i16,
 }
 
@@ -68,8 +68,8 @@ impl PdtKnxInt {
 }
 
 pub struct PdtKnxFloat {
-    code: String,
-    unit: String,
+    pub code: String,
+    pub unit: String,
     value: f32,
 }
 
@@ -187,7 +187,7 @@ fn bytes_to_float(bytes: Vec<u8>) -> Result<f32, Whatever> {
 }
 
 pub struct PdtKnxByte {
-    code: String,
+    pub code: String,
     value: u8,
 }
 
@@ -209,7 +209,7 @@ impl PdtKnxByte {
 }
 
 pub struct PdtKnxULong {
-    code: String,
+    pub code: String,
     value: u32,
 }
 
@@ -231,7 +231,7 @@ impl PdtKnxULong {
 }
 
 pub struct PdtKnxBit {
-    code: String,
+    pub code: String,
     value: bool,
 }
 
