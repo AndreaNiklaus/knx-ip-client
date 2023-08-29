@@ -95,6 +95,7 @@ impl TryFrom<&str> for KnxAddress {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
 pub struct IndividualAddress {
     area: u8,
     line: u8,

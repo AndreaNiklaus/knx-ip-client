@@ -1,7 +1,9 @@
+use crate::packets::core::{SearchRequest, SearchResponse, DISCOVERY_ENDPOINT_PORT, SYSTEM_MULTICAST_ADDRESS};
 use crate::packets::tunneling::FeatureSet;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io::Cursor, net::SocketAddr};
+use tokio::select;
 use tokio::time::timeout;
 
 use log::{debug, info, warn};
@@ -222,6 +224,54 @@ impl UdpTransport {
             whatever!("Tunneling response without a valid code {:?}", response_code)
         }
     }
+
+    pub async fn search(timeout: Duration) -> Result<Vec<SearchResponse>, Whatever> {
+        let local_addr = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
+        let socket = match UdpSocket::bind(local_addr).await {
+            Ok(socket) => socket,
+            Err(e) => whatever!("Unable to get a local address {:?}", e),
+        };
+
+        let local_addr = match socket.local_addr() {
+            Ok(SocketAddr::V4(addr)) => addr,
+            Ok(SocketAddr::V6(_addr)) => whatever!("Ipv6 socket adddress where IpV4 was expected"),
+            Err(e) => whatever!("Unable to get local address {:?}", e),
+        };
+
+        let req = SearchRequest::udp_unicast(local_addr).packet();
+        debug!("Sending search request {:0x?}", req);
+        socket
+            .send_to(&req, (SYSTEM_MULTICAST_ADDRESS, DISCOVERY_ENDPOINT_PORT))
+            .await
+            .expect("Unable to send request");
+
+        let mut buffer = vec![0; 100];
+        let mut responses = Vec::new();
+
+        loop {
+            select! {
+                n_bytes = socket.recv(&mut buffer) => {
+                    match n_bytes {
+                        Ok(_n_bytes) => {
+                            debug!("Search response {:0x?}", buffer);
+                            let mut cursor = Cursor::new(buffer.as_slice());
+                            let resp = SearchResponse::from_packet(&mut cursor)?;
+                            debug!("Parsed search response {:0x?}", resp);
+                            responses.push(resp);
+                        },
+                        Err(e) => {
+                            whatever!("Unable to get response {:?}", e);
+                        }
+                    }
+                },
+                _ = tokio::time::sleep(timeout) => {
+                     debug!("Search timeout received {} responses", responses.len());
+                     break;
+                }
+            }
+        }
+        Ok(responses)
+    }
 }
 
 pub struct UdpClient {
@@ -233,6 +283,11 @@ impl UdpClient {
         let transport = Arc::new(Mutex::new(UdpTransport::connect(addr).await?));
 
         Ok(Self { transport })
+    }
+
+    pub async fn search(timeout: Duration) -> Result<Vec<SearchResponse>, Whatever> {
+        let responses = UdpTransport::search(timeout).await?;
+        Ok(responses)
     }
 
     pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {

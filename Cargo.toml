@@ -9,7 +9,9 @@ repository = "https://github.com/AndreaNiklaus/knx-ip-client"
 readme = "README.md"
 
 [dependencies]
+bitflags = "2.3.3"
 byteorder = { version = "1.4.3", default-features = true }
+encoding = "0.2.33"
 enum-primitive-derive = "0.1.2"
 env_logger = "0.9.0"
 log = "0.4.17"
