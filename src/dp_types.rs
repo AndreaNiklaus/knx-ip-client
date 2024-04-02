@@ -85,6 +85,14 @@ impl PdtKnxFloat {
         let value = bytes_to_float(bytes)?;
         Ok(Self::temp(value))
     }
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Whatever> {
+        let value = bytes_to_float(bytes)?;
+        Ok(Self {
+            code: "9.x".to_string(),
+            unit: "".to_owned(),
+            value,
+        })
+    }
 
     pub fn get_bytes(&self) -> Vec<u8> {
         calimero_float_to_bytes(self.value)

@@ -1,5 +1,7 @@
 use crate::packets::core::ConnectionRequest;
 use crate::packets::core::ConnectionResponse;
+use crate::packets::core::ConnectionstateRequest;
+use crate::packets::core::ConnectionstateResponse;
 use crate::packets::core::DisconnectRequest;
 use crate::packets::core::DisconnectResponse;
 use crate::packets::core::HPAI;
@@ -17,17 +19,21 @@ use log::info;
 use log::warn;
 use snafu::whatever;
 use snafu::Whatever;
+use std::fmt::Debug;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::ToSocketAddrs;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
+use tokio::time::interval;
 
 enum TunnelingResponse {
     TunnelingRequest(TunnelingRequest),
     TunnelingAck(TunnelingAck),
     FeatureResponse(FeatureResp),
+    ConnectionstateResponse(ConnectionstateResponse),
     DisconnectResponse(DisconnectResponse),
 }
 
@@ -40,13 +46,13 @@ struct UdpMonitorTransport {
 }
 
 impl UdpMonitorTransport {
-    pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Whatever> {
+    pub async fn connect<A: ToSocketAddrs + Debug>(addr: A) -> Result<Self, Whatever> {
         let local_addr = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
         let socket = match UdpSocket::bind(local_addr).await {
             Ok(socket) => socket,
             Err(e) => whatever!("Unable to get a local address {:?}", e),
         };
-        debug!("Connecting with address target KnxIp");
+        debug!("Connecting with KnxIp {:?}", addr);
         if let Err(e) = socket.connect(addr).await {
             whatever!("Unable to connect with target {:?}", e);
         }
@@ -112,6 +118,11 @@ impl UdpMonitorTransport {
                                         warn!("Unable to send tunneling ack to knxip target {:?}", e);
                                     }
                                 },
+                                TunnelingResponse::ConnectionstateResponse(resp) => {
+                                    if resp.status != 0 {
+                                        warn!("Connection state response with error {}", resp.status);
+                                    }
+                                },
                                 TunnelingResponse::DisconnectResponse(resp) => {
                                     if resp.status == 0 {
                                         info!("Successfully disconnected");
@@ -122,7 +133,7 @@ impl UdpMonitorTransport {
                                 }
                             }
                         }
-                    }
+                    },
                 }
             }
         });
@@ -156,12 +167,23 @@ impl UdpMonitorTransport {
     }
 
     pub async fn disconnect(&self) -> Result<u8, Whatever> {
-        let req = DisconnectRequest::new(self.communication_channel_id, self.control_endpoint.clone()).packet();
-        debug!("Request disconnect for connection {}", self.communication_channel_id);
-        self.socket.send(&req).await.expect("Unable to send request");
+        let req =
+            DisconnectRequest::new(self.communication_channel_id, self.control_endpoint.clone())
+                .packet();
+        debug!(
+            "Request disconnect for connection {}",
+            self.communication_channel_id
+        );
+        self.socket
+            .send(&req)
+            .await
+            .expect("Unable to send request");
 
         let mut resp = vec![0; 100];
-        self.socket.recv(&mut resp).await.expect("Unable to get response");
+        self.socket
+            .recv(&mut resp)
+            .await
+            .expect("Unable to get response");
         let mut resp_cursor = Cursor::new(resp.as_slice());
 
         match DisconnectResponse::from_packet(&mut resp_cursor) {
@@ -169,7 +191,11 @@ impl UdpMonitorTransport {
                 debug!("Disconnect response status {}", resp.status);
                 Ok(resp.status)
             }
-            Err(e) => whatever!("Unable to request disconnection for id {}, {:?}", self.communication_channel_id, e),
+            Err(e) => whatever!(
+                "Unable to request disconnection for id {}, {:?}",
+                self.communication_channel_id,
+                e
+            ),
         }
     }
 
@@ -201,11 +227,20 @@ impl UdpMonitorTransport {
                 let resp = DisconnectResponse::from_packet(&mut resp_cursor)?;
                 debug!("Parsed disconnect response {:?}", resp);
                 Ok(TunnelingResponse::DisconnectResponse(resp))
+            } else if response_code == Some(&vec![0x02, 0x08]) {
+                debug!("Received connection state response");
+                let mut resp_cursor = Cursor::new(resp.as_slice());
+                let resp = ConnectionstateResponse::from_packet(&mut resp_cursor)?;
+                debug!("Parsed connection state response {:?}", resp);
+                Ok(TunnelingResponse::ConnectionstateResponse(resp))
             } else {
                 whatever!("Unknown response code {:?}", response_code);
             }
         } else {
-            whatever!("Tunneling response without a valid code {:?}", response_code)
+            whatever!(
+                "Tunneling response without a valid code {:?}",
+                response_code
+            )
         }
     }
 }
@@ -215,10 +250,32 @@ pub struct UdpMonitor {
 }
 
 impl UdpMonitor {
-    pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Whatever> {
+    pub async fn connect<A: ToSocketAddrs + Debug>(addr: A) -> Result<Self, Whatever> {
         let transport = Arc::new(Mutex::new(UdpMonitorTransport::connect(addr).await?));
 
-        transport.lock().await.set_feature(KnxIpFeature::InfoServiceEnable, 1).await?;
+        transport
+            .lock()
+            .await
+            .set_feature(KnxIpFeature::InfoServiceEnable, 1)
+            .await?;
+
+        let heart_breat_transport = transport.clone();
+        tokio::spawn(async move {
+            let mut heart_beat = interval(Duration::from_secs(30));
+
+            loop {
+                heart_beat.tick().await;
+                info!("Send connection heart beat");
+                let t = heart_breat_transport.lock().await;
+                let req = ConnectionstateRequest::new(
+                    t.communication_channel_id,
+                    t.control_endpoint.clone(),
+                );
+                if let Err(e) = t.socket.send(&req.packet()).await {
+                    warn!("Unable to send connection state request {:?}", e);
+                };
+            }
+        });
 
         Ok(Self { transport })
     }
@@ -228,8 +285,9 @@ impl UdpMonitor {
     }
 
     pub async fn next_msg(&self) -> Result<LDataInd, Whatever> {
+        let rx = { self.transport.lock().await.rx.clone() };
         loop {
-            match self.transport.lock().await.rx.lock().await.recv().await {
+            match rx.lock().await.recv().await {
                 Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
                     let data_con = LDataCon::from_cemi(cemi);
                     debug!("Parsed confirmation cEMI {:?}", data_con);
