@@ -11,20 +11,24 @@ impl PdtKnxScaledValue {
         Self {
             code: "5.001".to_string(),
             unit: "%".to_string(),
-            value: (percent * 2.54 + 1.0).round() as u8
+            value: (percent * 2.54 + 1.0).round() as u8,
         }
     }
 
     pub fn get_value(&self) -> f32 {
         if self.value == 0 {
-            return 0.0
+            return 0.0;
         }
         (self.value - 1) as f32 / 2.54
     }
 
     pub fn from_bytes(b: &Vec<u8>) -> Self {
         let value = b.get(0).unwrap_or(&0);
-        Self {code: "5.001".to_string(), unit: "%".to_string(), value: *value}
+        Self {
+            code: "5.001".to_string(),
+            unit: "%".to_string(),
+            value: *value,
+        }
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
@@ -43,14 +47,14 @@ impl PdtKnxInt {
         Self {
             code: "8.001".to_string(),
             unit: "pulses".to_string(),
-            value
+            value,
         }
     }
     pub fn percent_v16(value: i16) -> Self {
         Self {
             code: "8.010".to_string(),
             unit: "%".to_string(),
-            value: value * 100
+            value: value * 100,
         }
     }
 
@@ -80,6 +84,14 @@ impl PdtKnxFloat {
     pub fn temp_from_bytes(bytes: Vec<u8>) -> Result<Self, Whatever> {
         let value = bytes_to_float(bytes)?;
         Ok(Self::temp(value))
+    }
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Whatever> {
+        let value = bytes_to_float(bytes)?;
+        Ok(Self {
+            code: "9.x".to_string(),
+            unit: "".to_owned(),
+            value,
+        })
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
@@ -191,7 +203,7 @@ impl PdtKnxByte {
     pub fn general(value: u8) -> Self {
         Self {
             code: "20.x".to_string(),
-            value
+            value,
         }
     }
 
@@ -213,7 +225,7 @@ impl PdtKnxULong {
     pub fn general(value: u32) -> Self {
         Self {
             code: "12.x".to_string(),
-            value
+            value,
         }
     }
 
@@ -235,7 +247,7 @@ impl PdtKnxBit {
     pub fn switch(value: bool) -> Self {
         Self {
             code: "1.001".to_string(),
-            value
+            value,
         }
     }
 

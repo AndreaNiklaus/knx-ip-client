@@ -1,16 +1,26 @@
 use crate::packets::tunneling::FeatureSet;
-use std::time::Duration;
-use tokio::time::timeout;
 use std::sync::Arc;
-use std::{net::SocketAddr, io::Cursor};
+use std::time::Duration;
+use std::{io::Cursor, net::SocketAddr};
+use tokio::time::timeout;
 
-use log::{debug, warn, info};
-use snafu::{Whatever, whatever};
-use tokio::net::{UdpSocket, ToSocketAddrs};
-use tokio::sync::{Mutex, mpsc};
+use log::{debug, info, warn};
+use snafu::{whatever, Whatever};
+use tokio::net::{ToSocketAddrs, UdpSocket};
+use tokio::sync::{mpsc, Mutex};
 
 use crate::packets::tunneling::KnxIpFeature;
-use crate::packets::{core::{ConnectionstateResponse, ConnectionstateRequest, HPAI, ConnectionRequest, ConnectionResponse, DisconnectRequest, DisconnectResponse}, addresses::KnxAddress, emi::{LDataReqMessage, CEMI, CEMIMessageCode, LDataCon, LDataInd}, tunneling::{TunnelingRequest, TunnelingAck}, tpdu::TPDU, apdu::APDU};
+use crate::packets::{
+    addresses::KnxAddress,
+    apdu::APDU,
+    core::{
+        ConnectionRequest, ConnectionResponse, ConnectionstateRequest, ConnectionstateResponse,
+        DisconnectRequest, DisconnectResponse, HPAI,
+    },
+    emi::{CEMIMessageCode, LDataCon, LDataInd, LDataReqMessage, CEMI},
+    tpdu::TPDU,
+    tunneling::{TunnelingAck, TunnelingRequest},
+};
 
 pub type TransportResult<T> = Result<T, Whatever>;
 
@@ -109,7 +119,6 @@ impl UdpTransport {
             }
         });
 
-
         Ok(Self {
             socket,
             communication_channel_id: connection.get_communication_channel_id(),
@@ -131,7 +140,10 @@ impl UdpTransport {
     }
 
     pub async fn get_connectionstate(&self) -> TransportResult<ConnectionstateResponse> {
-        let req = ConnectionstateRequest::new(self.communication_channel_id, self.control_endpoint.clone());
+        let req = ConnectionstateRequest::new(
+            self.communication_channel_id,
+            self.control_endpoint.clone(),
+        );
         if let Err(e) = self.socket.send(&req.packet()).await {
             whatever!("Unable to send connection state request {:?}", e);
         };
@@ -170,20 +182,35 @@ impl UdpTransport {
     }
 
     pub async fn disconnect(&self) -> Result<u8, Whatever> {
-        let req = DisconnectRequest::new(self.communication_channel_id, self.control_endpoint.clone()).packet();
-        debug!("Request disconnect for connection {}", self.communication_channel_id);
-        self.socket.send(&req).await.expect("Unable to send request");
+        let req =
+            DisconnectRequest::new(self.communication_channel_id, self.control_endpoint.clone())
+                .packet();
+        debug!(
+            "Request disconnect for connection {}",
+            self.communication_channel_id
+        );
+        self.socket
+            .send(&req)
+            .await
+            .expect("Unable to send request");
 
         let mut resp = vec![0; 100];
-        self.socket.recv(&mut resp).await.expect("Unable to get response");
+        self.socket
+            .recv(&mut resp)
+            .await
+            .expect("Unable to get response");
         let mut resp_cursor = Cursor::new(resp.as_slice());
 
         match DisconnectResponse::from_packet(&mut resp_cursor) {
             Ok(resp) => {
                 debug!("Disconnect response status {}", resp.status);
                 Ok(resp.status)
-            },
-            Err(e) => whatever!("Unable to request disconnection for id {}, {:?}", self.communication_channel_id, e),
+            }
+            Err(e) => whatever!(
+                "Unable to request disconnection for id {}, {:?}",
+                self.communication_channel_id,
+                e
+            ),
         }
     }
 
@@ -213,7 +240,10 @@ impl UdpTransport {
                 whatever!("Unknown response code {:?}", response_code);
             }
         } else {
-            whatever!("Tunneling response without a valid code {:?}", response_code)
+            whatever!(
+                "Tunneling response without a valid code {:?}",
+                response_code
+            )
         }
     }
 }
@@ -227,7 +257,10 @@ impl UdpClient {
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, Whatever> {
         let transport = Arc::new(Mutex::new(UdpTransport::connect(addr).await?));
 
-        Ok(Self {transport, timeout: Duration::from_secs(10)})
+        Ok(Self {
+            transport,
+            timeout: Duration::from_secs(10),
+        })
     }
 
     fn get_read_timeout(&self) -> Duration {
@@ -239,6 +272,7 @@ impl UdpClient {
     }
 
     pub async fn read_group_address_value(&self, addr: KnxAddress) -> TransportResult<Vec<u8>> {
+        debug!("Read {:?}", addr);
         let expected_addr = addr.to_u16();
         let apdu = APDU::group_value_read();
         let tpdu = TPDU::t_data_group(apdu);
@@ -268,12 +302,16 @@ impl UdpClient {
         }
     }
 
-
     pub async fn flush(&self) -> Result<(), Whatever> {
         Ok(())
     }
 
-    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<Vec<u8>> {
+    pub async fn write_group_address_value(
+        &self,
+        addr: KnxAddress,
+        value: Vec<u8>,
+    ) -> TransportResult<Vec<u8>> {
+        debug!("Write {:?} to {:?}", value, addr);
         let apdu = APDU::group_value_write(value);
         let tpdu = TPDU::t_data_group(apdu);
         let req = LDataReqMessage::new(addr, tpdu);
@@ -315,47 +353,110 @@ mod tests {
     #[tokio::test]
     async fn test_connect() {
         env_logger::try_init();
-        let mock_server = UdpSocket::bind("0.0.0.0:0").await.expect("Unable to bind to local UDP port");
-        let addr = mock_server.local_addr().expect("Mock server should have a valid local address");
+        let mock_server = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .expect("Unable to bind to local UDP port");
+        let addr = mock_server
+            .local_addr()
+            .expect("Mock server should have a valid local address");
         tokio::spawn(async move {
             let mut connection_req = vec![0; 100];
-            let (_, peer) = mock_server.recv_from(&mut connection_req).await.expect("Unable to receive connection request");
+            let (_, peer) = mock_server
+                .recv_from(&mut connection_req)
+                .await
+                .expect("Unable to receive connection request");
             info!("[Mock server] Received {:02x?}", connection_req);
-            let mock_resp = vec![0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-            mock_server.send_to(&mock_resp, peer).await.expect("Unable to send mock connection response");
+            let mock_resp = vec![
+                0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ];
+            mock_server
+                .send_to(&mock_resp, peer)
+                .await
+                .expect("Unable to send mock connection response");
             info!("[Mock server] Sended mock response");
         });
 
-        let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
-        assert_eq!(client.get_communication_channel_id(), 8, "Communication channel id should be 8");
+        let client = UdpTransport::connect(addr)
+            .await
+            .expect("Unable to connect with mock server");
+        assert_eq!(
+            client.get_communication_channel_id(),
+            8,
+            "Communication channel id should be 8"
+        );
     }
 
     #[tokio::test]
     async fn test_get_connectionstate() {
         env_logger::try_init();
-        let mock_server = UdpSocket::bind("0.0.0.0:0").await.expect("Unable to bind to local UDP port");
-        let addr = mock_server.local_addr().expect("Mock server should have a valid local address");
+        let mock_server = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .expect("Unable to bind to local UDP port");
+        let addr = mock_server
+            .local_addr()
+            .expect("Mock server should have a valid local address");
 
         tokio::spawn(async move {
             let mut connection_req = vec![0; 100];
-            let (_, peer) = mock_server.recv_from(&mut connection_req).await.expect("Unable to receive connection request");
+            let (_, peer) = mock_server
+                .recv_from(&mut connection_req)
+                .await
+                .expect("Unable to receive connection request");
             info!("[Mock server] Received {:02x?}", connection_req);
-            let mock_resp = vec![0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-            mock_server.send_to(&mock_resp, peer).await.expect("Unable to send mock connection response");
+            let mock_resp = vec![
+                0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ];
+            mock_server
+                .send_to(&mock_resp, peer)
+                .await
+                .expect("Unable to send mock connection response");
             info!("[Mock server] Sended mock response");
 
             let mut connectionstate_req = vec![0; 100];
-            let (_, peer) = mock_server.recv_from(&mut connectionstate_req).await.expect("Unable to receive connection state request");
+            let (_, peer) = mock_server
+                .recv_from(&mut connectionstate_req)
+                .await
+                .expect("Unable to receive connection state request");
             let mut cursor = Cursor::new(connectionstate_req.as_slice());
-            let req = ConnectionstateRequest::from_packet(&mut cursor).expect("Invalid connectionstate request");
+            let req = ConnectionstateRequest::from_packet(&mut cursor)
+                .expect("Invalid connectionstate request");
             info!("[Mock server] Received connection state request {:?}", req);
-            let connectionstate_resp = ConnectionstateResponse { communication_channel_id: req.communication_channel_id, status: 0 };
-            mock_server.send_to(&connectionstate_resp.packet(), peer).await.expect("Unable to respond to connection state request");
+            let connectionstate_resp = ConnectionstateResponse {
+                communication_channel_id: req.communication_channel_id,
+                status: 0,
+            };
+            mock_server
+                .send_to(&connectionstate_resp.packet(), peer)
+                .await
+                .expect("Unable to respond to connection state request");
         });
 
-        let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
-        let state = client.get_connectionstate().await.expect("Should be able to request connectionstate");
-        assert_eq!(state.communication_channel_id, client.get_communication_channel_id(), "Communication channel id should match client value");
+        let client = UdpTransport::connect(addr)
+            .await
+            .expect("Unable to connect with mock server");
+        let state = client
+            .get_connectionstate()
+            .await
+            .expect("Should be able to request connectionstate");
+        assert_eq!(
+            state.communication_channel_id,
+            client.get_communication_channel_id(),
+            "Communication channel id should match client value"
+        );
         assert_eq!(state.status, 0, "Connection state should be ok");
     }
 }
