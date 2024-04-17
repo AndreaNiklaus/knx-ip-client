@@ -166,6 +166,23 @@ impl fmt::Debug for Group3LevelAddress {
     }
 }
 
+impl TryFrom<&str> for Group3LevelAddress {
+    type Error = Whatever;
+
+    fn try_from(value: &str) -> Result<Group3LevelAddress, Whatever> {
+        let parts: Vec<&str> = value.split("/").collect();
+
+        if parts.len() != 3 {
+            whatever!("Wrong fields count");
+        }
+
+        match (parts[0].parse::<u8>(), parts[1].parse::<u8>(), parts[2].parse::<u8>()) {
+            (Ok(main), Ok(middle), Ok(sub)) => Ok(Self { main, middle, sub }),
+            _ => whatever!("Unable to parse parts in u8"),
+        }
+    }
+}
+
 impl Group3LevelAddress {
     pub fn from_u16(v: u16) -> Self {
         let main = (v & 0b11111 << 11) >> 11;

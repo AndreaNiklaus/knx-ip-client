@@ -217,6 +217,9 @@ impl ConnectionResponse {
     pub fn get_data_endpoint(&self) -> HPAI {
         self.data_endpoint.clone()
     }
+    pub fn get_status(&self) -> u8 {
+        self.status
+    }
     pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
         let header_size = match packet_reader.read_u8() {
             Ok(header_size) => {
@@ -472,6 +475,33 @@ impl DisconnectRequest {
         }
     }
 
+    pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
+        let header_size = match packet_reader.read_u8() {
+            Ok(header_size) => {
+                ensure_whatever!(header_size >= 8, "Header size should be at least 8 instead of {}", header_size);
+                header_size
+            }
+            Err(e) => whatever!("Unable to read header size {:?}", e),
+        };
+
+        let communication_channel_id = match packet_reader.read_u8() {
+            Ok(communication_channel_id) => communication_channel_id,
+            Err(e) => whatever!("Unable to read communication channel id {:?}", e),
+        };
+
+        let _reserved = match packet_reader.read_u8() {
+            Ok(reserved) => reserved,
+            Err(e) => whatever!("Unable to read reserved data {:?}", e),
+        };
+
+        let control_endpoint = HPAI::from_packet(packet_reader)?;
+
+        Ok(Self {
+            communication_channel_id,
+            control_endpoint,
+        })
+    }
+
     pub fn packet(&self) -> Vec<u8> {
         let mut packet = vec![0x06, 0x10, 0x02, 0x09];
         let mut control_endpoint_packet = self.control_endpoint.packet();
@@ -496,6 +526,13 @@ pub struct DisconnectResponse {
 }
 
 impl DisconnectResponse {
+    pub fn from_disconnect_request(req: &DisconnectRequest) -> Self {
+        Self {
+            communication_channel_id: req.communication_channel_id,
+            status: 0, // No error
+        }
+    }
+
     pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
         let header_size = match packet_reader.read_u8() {
             Ok(header_size) => {
@@ -543,6 +580,15 @@ impl DisconnectResponse {
             communication_channel_id,
             status,
         })
+    }
+
+    pub fn packet(&self) -> Vec<u8> {
+        let mut packet = vec![0x06, 0x10, 0x02, 0x0A];
+        packet.write_u16::<BigEndian>(8).unwrap();
+        packet.write_u8(self.communication_channel_id).unwrap();
+        packet.write_u8(self.status).unwrap();
+
+        packet
     }
 }
 

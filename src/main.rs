@@ -3,7 +3,7 @@ use knx_ip_client::{
     transport::udp::UdpClient,
 };
 use log::info;
-use snafu::Whatever;
+use snafu::{ResultExt, Whatever};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -14,7 +14,8 @@ async fn main() -> Result<(), Whatever> {
     let off = PdtKnxBit::switch(false);
     let resp = client
         .write_group_address_value("1/0/0".try_into().unwrap(), off.get_bytes())
-        .await?;
+        .await
+        .map_err(|_| "Unable to write group address");
     // let percent = PdtKnxScaledValue::scaling(50.0);
     // let resp = client.write_group_address_value("1/4/3".try_into().unwrap(), percent.get_bytes()).await?;
     info!("Write group address response {:?}", resp);
