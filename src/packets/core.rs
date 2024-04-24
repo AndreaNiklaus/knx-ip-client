@@ -231,7 +231,7 @@ impl ConnectionResponse {
 
         let _version = match packet_reader.read_u8() {
             Ok(version) => {
-                ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:2X}", header_size);
+                ensure_whatever!(version == 0x10, "KNXIP version should be 0x10 instead of {:02X}", header_size);
                 version
             }
             Err(e) => whatever!("Unable to read KNXIP version {:?}", e),
@@ -241,7 +241,7 @@ impl ConnectionResponse {
             Ok(connect_response) => {
                 ensure_whatever!(
                     connect_response == 0x0206,
-                    "Connect response should be 0x0206 instead of {:2X}",
+                    "Connect response should be 0x0206 instead of {:02X}",
                     connect_response
                 );
                 connect_response

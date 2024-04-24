@@ -1,4 +1,4 @@
-use snafu::{whatever, Whatever};
+use snafu::{whatever, OptionExt, Whatever};
 
 pub struct PdtKnxScaledValue {
     pub code: String,
@@ -7,6 +7,14 @@ pub struct PdtKnxScaledValue {
 }
 
 impl PdtKnxScaledValue {
+    pub fn general(value: u8) -> Self {
+        Self {
+            code: "5.x".to_string(),
+            unit: "".to_string(),
+            value,
+        }
+    }
+
     pub fn scaling(percent: f32) -> Self {
         Self {
             code: "5.001".to_string(),
@@ -22,13 +30,13 @@ impl PdtKnxScaledValue {
         (self.value - 1) as f32 / 2.54
     }
 
-    pub fn from_bytes(b: &[u8]) -> Self {
-        let value = b.first().unwrap_or(&0);
-        Self {
+    pub fn from_bytes(b: &[u8]) -> Result<Self, Whatever> {
+        let value = b.first().with_whatever_context(|| "At least one byte is needed")?;
+        Ok(Self {
             code: "5.001".to_string(),
             unit: "%".to_string(),
             value: *value,
-        }
+        })
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
@@ -244,6 +252,13 @@ pub struct PdtKnxBit {
 }
 
 impl PdtKnxBit {
+    pub fn general(value: bool) -> Self {
+        Self {
+            code: "1.x".to_string(),
+            value,
+        }
+    }
+
     pub fn switch(value: bool) -> Self {
         Self {
             code: "1.001".to_string(),
@@ -255,8 +270,57 @@ impl PdtKnxBit {
         self.value
     }
 
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Whatever> {
+        let value = bytes.get(0).with_whatever_context(|| "Should have at least one byte")? > &0;
+        Ok(Self {
+            code: "1.x".to_string(),
+            value,
+        })
+    }
     pub fn get_bytes(&self) -> Vec<u8> {
         vec![self.value as u8]
+    }
+}
+
+pub struct PdtKnxB1U3 {
+    pub code: String,
+    bit: bool,
+    step: u8,
+}
+
+impl PdtKnxB1U3 {
+    pub fn dimming(increase: bool, step: u8) -> Self {
+        Self {
+            code: "3.007".to_string(),
+            bit: increase,
+            step: step & 0b111,
+        }
+    }
+
+    pub fn blinds(up: bool, step: u8) -> Self {
+        Self {
+            code: "3.008".to_string(),
+            bit: up,
+            step: step & 0b111,
+        }
+    }
+
+    pub fn from_value(value: u8) -> Self {
+        Self {
+            code: "3.x".to_string(),
+            bit: (value & 8) > 0,
+            step: value & 0b111,
+        }
+    }
+
+    pub fn get_value(&self) -> u8 {
+        let mut value: u8 = if self.bit { 8 } else { 0 };
+        value |= self.step;
+        value
+    }
+
+    pub fn get_bytes(&self) -> Vec<u8> {
+        vec![self.get_value() as u8]
     }
 }
 

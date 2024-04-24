@@ -4,11 +4,11 @@ use crate::transport;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io::Cursor, net::SocketAddr};
-use tokio::select;
+use tokio::{io, select};
 use tokio::sync::mpsc::Sender;
 use tokio::time::{interval, sleep, timeout};
 
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use snafu::{ensure_whatever, whatever, ResultExt, Snafu, Whatever};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 use tokio::sync::{mpsc, Mutex};
@@ -68,6 +68,25 @@ impl From<String> for Error {
     }
 }
 
+pub struct MyUdpSocket {
+    pub inner: UdpSocket
+}
+
+impl MyUdpSocket {
+    pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        trace!("[OUT] {:02x?}", buf);
+        self.inner.send(buf).await
+    }
+
+    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        let resp = self.inner.recv(buf).await;
+        if let Ok(count) = resp {
+            trace!("[IN] {:02x?}", &buf[0..count]);
+        }
+        resp
+    }
+}
+
 pub type TransportResult<T> = Result<T, Error>;
 
 enum TunnelingResponse {
@@ -81,7 +100,7 @@ enum TunnelingResponse {
 
 
 struct UdpTransport {
-    socket: Arc<UdpSocket>,
+    socket: Arc<MyUdpSocket>,
     connection_data: Arc<Mutex<Option<ConnectionData>>>,
     rx: Arc<Mutex<mpsc::Receiver<CEMI>>>,
 }
@@ -91,7 +110,6 @@ impl UdpTransport {
         let local_addr = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
         let socket = UdpSocket::bind(local_addr).await
             .with_whatever_context(|e| format!("Unable to get local address {:?}", e))?;
-        let socket = Arc::new(socket);
 
         let debug_addr = format!("{:?}", addr);
         debug!("Connecting with KnxIp {}", debug_addr);
@@ -99,6 +117,7 @@ impl UdpTransport {
             whatever!("Unable to connect with target {:?}", e);
         }
         debug!("Connected with KnxIp {}", debug_addr);
+        let socket = Arc::new(MyUdpSocket {inner: socket});
 
         let connection_data: Arc<Mutex<Option<ConnectionData>>> = Arc::new(Mutex::new(None));
 
@@ -117,7 +136,7 @@ impl UdpTransport {
                 //
                 heart_beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-                loop {
+                'main: loop {
 
                     // If connection data is none we don't have a valid connection
                     // with KNXIP device
@@ -132,11 +151,16 @@ impl UdpTransport {
                         *connection_data = Some(ConnectionData::from_connection_response(connection));
                     }
 
-                    loop {
+                    'recv: loop {
                         tokio::select! {
                             resp = handle_recv_from_knx_device(socket.clone(), from_knx_tx.clone()) => {
                                 info!("Recieve messages from knx device task exited with result {:?}", resp);
-                                break;
+                                if resp.is_ok() {
+                                    debug!("Exit from reconnection loop");
+                                    break 'main;
+                                } else {
+                                    break 'recv;
+                                }
                             },
                             _ = heart_beat.tick() => {
                                 info!("Send connection heart beat");
@@ -160,6 +184,7 @@ impl UdpTransport {
                     let mut data = connection_data.lock().await;
                     *data = None;
                 }
+                debug!("UpdTransport receive task exited");
             }
         });
 
@@ -219,7 +244,9 @@ impl UdpTransport {
         let tunneled_req = TunnelingRequest::new(self.get_communication_channel_id().await?, sequence_nr, req);
         debug!("TunnelingRequest {:?}", tunneled_req);
         let req = tunneled_req.packet();
-        debug!("Raw tunnel request: {:02x?}", req);
+        debug!("======================");
+        debug!("[OUT] Raw tunnel request: {:02x?}", req);
+        debug!("======================");
         if let Err(e) = self.socket.send(&req).await {
             whatever!("Unable to send request {:?}", e);
         }
@@ -238,7 +265,7 @@ impl UdpTransport {
         Ok(())
     }
 
-    pub async fn disconnect(&self) -> Result<u8, Whatever> {
+    pub async fn disconnect(&self) -> Result<(), Whatever> {
         let req =
             DisconnectRequest::new(self.get_communication_channel_id().await?, self.get_control_endpoint().await?)
                 .packet();
@@ -251,23 +278,12 @@ impl UdpTransport {
             .await
             .expect("Unable to send request");
 
-        let mut resp = vec![0; 100];
-        self.socket
-            .recv(&mut resp)
-            .await
-            .expect("Unable to get response");
-        let mut resp_cursor = Cursor::new(resp.as_slice());
-
-        match DisconnectResponse::from_packet(&mut resp_cursor) {
-            Ok(resp) => {
-                debug!("Disconnect response status {}", resp.status);
-                Ok(resp.status)
-            }
-            Err(e) => whatever!(
-                "Unable to request disconnection for id {}, {:?}",
-                self.get_communication_channel_id().await?,
-                e
-            ),
+        let mut rx = self.rx.lock().await;
+        match rx.recv().await {
+            Some(_resp) => {
+                Ok(())
+            },
+            None => whatever!("Transport closed before disconnection response"),
         }
     }
 
@@ -321,7 +337,6 @@ impl UdpTransport {
 }
 
     pub fn parse_response(resp: Vec<u8>) -> Result<TunnelingResponse, Whatever> {
-        debug!("TunnelingResponse: {:02x?}", resp);
         let response_code = resp.get(2..4);
         if response_code.is_some() {
             if response_code == Some(&[0x04, 0x20]) {
@@ -373,7 +388,7 @@ impl UdpTransport {
 
 // Connects to KNXIP device
 //
-pub(crate) async fn connect(socket: Arc<UdpSocket>) -> ConnectionResponse {
+pub(crate) async fn connect(socket: Arc<MyUdpSocket>) -> ConnectionResponse {
     loop {
         match try_connection(socket.clone()).await {
             Ok(connection) => return connection,
@@ -385,7 +400,7 @@ pub(crate) async fn connect(socket: Arc<UdpSocket>) -> ConnectionResponse {
     }
 }
 
-async fn try_connection(socket: Arc<UdpSocket>) -> Result<ConnectionResponse, Whatever> {
+async fn try_connection(socket: Arc<MyUdpSocket>) -> Result<ConnectionResponse, Whatever> {
     let req = ConnectionRequest::tunnel().packet();
     debug!("Sending tunnel connection request {:0x?}", req);
     if let Err(e) = socket.send(&req).await {
@@ -408,20 +423,15 @@ async fn try_connection(socket: Arc<UdpSocket>) -> Result<ConnectionResponse, Wh
     Ok(connection)
 }
 
-pub(crate) async fn handle_recv_from_knx_device(socket: Arc<UdpSocket>, from_knx_tx: Sender<CEMI>) -> TransportResult<String> {
+pub(crate) async fn handle_recv_from_knx_device(socket: Arc<MyUdpSocket>, from_knx_tx: Sender<CEMI>) -> TransportResult<String> {
     loop {
         let mut data = vec![0; 100];
         let count = socket.recv(&mut data).await
             .map_err(|e| format!("UPD Socket was closed {:?}", e))?;
 
         if count > 0 {
-            let resp = match parse_response(data) {
-                Ok(resp) => resp,
-                Err(e) => {
-                    warn!("Unable to parse tunneling response. {:?}", e);
-                    continue;
-                }
-            };
+            let resp = parse_response(data)?;
+
             match resp {
                 TunnelingResponse::TunnelingRequest(req) => {
                     let ack = TunnelingAck::new(req.communication_channel_id, req.sequence_nr, 0);
@@ -456,7 +466,7 @@ pub(crate) async fn handle_recv_from_knx_device(socket: Arc<UdpSocket>, from_knx
                 TunnelingResponse::ConnectionstateResponse(resp) => {
                     if resp.status != 0 {
                         warn!("Connection state response with error {}", resp.status);
-                        break Ok("KNX device signaled a connection state error".into());
+                        whatever!("KNX device signaled a connection state error");
                     }
                 },
                 TunnelingResponse::DisconnectResponse(resp) => {
@@ -553,7 +563,7 @@ impl UdpClient {
         &self,
         addr: KnxAddress,
         value: Vec<u8>,
-    ) -> TransportResult<Vec<u8>> {
+    ) -> TransportResult<()> {
         debug!("Write {:?} to {:?}", value, addr);
         let apdu = APDU::group_value_write(value);
         let tpdu = TPDU::t_data_group(apdu);
@@ -562,18 +572,14 @@ impl UdpClient {
 
         let transport = self.transport.lock().await;
         transport.tunnel_req(req.packet()).await?;
+        debug!("Write request sent to bus");
         let mut rx = transport.rx.lock().await;
         loop {
             match timeout(self.get_write_timeout(), rx.recv()).await {
                 Ok(Some(cemi)) if cemi.msg_code == CEMIMessageCode::LDataCon as u8 => {
                     let data_con = LDataCon::from_cemi(cemi);
                     debug!("Parsed confirmation cEMI {:?}", data_con);
-                    continue;
-                }
-                Ok(Some(cemi)) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
-                    let data_ind = LDataInd::from_cemi(cemi)?;
-                    debug!("Parsed indication cEMI {:?}", data_ind);
-                    return Ok(data_ind.value);
+                    return Ok(());
                 }
                 Ok(Some(cemi)) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
                 Ok(None) => whatever!("No more data will be received from client"),
@@ -582,7 +588,7 @@ impl UdpClient {
         }
     }
 
-    pub async fn disconnect(&self) -> Result<u8, Whatever> {
+    pub async fn disconnect(&self) -> Result<(), Whatever> {
         self.transport.lock().await.disconnect().await
     }
 }
@@ -626,7 +632,7 @@ mod tests {
             .await
             .expect("Unable to connect with mock server");
         assert_eq!(
-            client.get_communication_channel_id(),
+            client.get_communication_channel_id().await.expect("To be able to get channel id"),
             8,
             "Communication channel id should be 8"
         );
@@ -694,7 +700,7 @@ mod tests {
             .expect("Should be able to request connectionstate");
         assert_eq!(
             state.communication_channel_id,
-            client.get_communication_channel_id(),
+            client.get_communication_channel_id().await.expect("To be able to get channel id"),
             "Communication channel id should match client value"
         );
         assert_eq!(state.status, 0, "Connection state should be ok");

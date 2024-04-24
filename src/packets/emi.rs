@@ -1,8 +1,9 @@
 use super::{addresses::KnxAddress, tpdu::TPDU};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use log::debug;
+use log::{debug, warn};
 use snafu::{whatever, Whatever};
 use std::io::{Cursor, Read};
+use tracing::instrument;
 
 #[derive(Debug)]
 pub struct LDataCon {
@@ -57,11 +58,13 @@ pub struct LData {
     pub src: u16,
     pub dest: u16,
     pub frame_type: bool,
-    pub repetition: bool,
+    pub repetition: bool, // 1: not repeated, 0: repeated
     pub system_broadcast: bool,
     pub ack_request: bool,
 }
 
+// 03_06_03 EMI IMI section 4.1.5.3.5
+//
 #[derive(Debug)]
 pub struct LDataInd {
     pub cemi: CEMI,
@@ -70,6 +73,7 @@ pub struct LDataInd {
 }
 
 impl LDataInd {
+    #[instrument]
     pub fn from_cemi(cemi: CEMI) -> Result<Self, Whatever> {
         let mut reader = Cursor::new(cemi.service_info.as_slice());
         let control1 = match reader.read_u8() {
@@ -103,14 +107,19 @@ impl LDataInd {
         let system_broadcast = (control1 & (1 << 4)) > 0;
         let ack_request = (control1 & (1 << 1)) > 0;
 
-        let acpi = (octects_6_7 & 0x03c0) >> 6;
+        let apci = (octects_6_7 & 0x03c0) >> 6;
         debug!("Length {:?}", length);
         debug!("Octects 6 and 7: {:0x?}", octects_6_7);
-        debug!("Apci: {:0x?}", acpi);
+        debug!("Apci: {:0x?}", apci);
 
         let mut value = vec![0; length as usize];
-        if let Err(e) = reader.read(&mut value) {
-            whatever!("Unable to read value of length {}, {:?}", length, e);
+        if length > 0 {
+            if let Err(e) = reader.read(&mut value) {
+                whatever!("Unable to read value of length {}, {:?}", length, e);
+            }
+        } else {
+            let data = (octects_6_7 & 0x3f) as u8;
+            value.push(data);
         }
         debug!("Value: {:0x?}", value);
 
@@ -182,6 +191,7 @@ pub struct CEMI {
 }
 
 impl CEMI {
+    #[instrument]
     pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
         let msg_code = match packet_reader.read_u8() {
             Ok(code) => code,
@@ -303,5 +313,27 @@ impl TryFrom<u8> for CEMIAdditionalInfoType {
             x if x == CEMIAdditionalInfoType::ManufacturerSpecificData as u8 => Ok(CEMIAdditionalInfoType::ManufacturerSpecificData),
             _ => Err(()),
         }
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use std::io::Cursor;
+
+    use crate::packets::emi::LDataInd;
+
+    use super::CEMI;
+
+    #[test]
+    pub fn bit_update() {
+        env_logger::init();
+        let packet_bytes: [u8; 11] = [0x29, 0x00, 0xbc, 0xe0, 0x11, 0x0b, 0x0a, 0x01, 0x01, 0x00, 0x81];
+        let mut cursor = Cursor::new(&packet_bytes[..]);
+        let cemi = CEMI::from_packet(&mut cursor).expect("It should be able to parse CEMI packet");
+        assert_eq!(0x29, cemi.msg_code, "Message code should be L_Data.ind");
+        assert_eq!(0, cemi.additional_infos.len(), "Additional infos should be empty");
+
+        let ind = LDataInd::from_cemi(cemi).expect("To be able to parse L_Data.ind from cemi");
+        assert_eq!(1, ind.value.len(), "Data value should have length 1");
     }
 }
