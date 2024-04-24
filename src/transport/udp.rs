@@ -640,6 +640,17 @@ mod tests {
         });
 
         let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
+        let mut counter = 100;
+        loop {
+            sleep(Duration::from_millis(10)).await;
+            if client.connection_data.lock().await.is_some() {
+                break;
+            }
+            counter -= 1;
+            if counter <= 0 {
+                panic!("Unable to connect with mock server");
+            }
+        }
         let state = client.get_connectionstate().await.expect("Should be able to request connectionstate");
         assert_eq!(
             state.communication_channel_id,
@@ -647,5 +658,7 @@ mod tests {
             "Communication channel id should match client value"
         );
         assert_eq!(state.status, 0, "Connection state should be ok");
+        info!("Closing client");
+        client.disconnect().await.expect("unable to disconnect");
     }
 }
