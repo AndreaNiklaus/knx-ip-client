@@ -4,9 +4,9 @@ use crate::transport;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io::Cursor, net::SocketAddr};
-use tokio::{io, select};
 use tokio::sync::mpsc::Sender;
 use tokio::time::{interval, sleep, timeout};
+use tokio::{io, select};
 
 use log::{debug, info, trace, warn};
 use snafu::{ensure_whatever, whatever, ResultExt, Snafu, Whatever};
@@ -17,10 +17,7 @@ use crate::packets::tunneling::KnxIpFeature;
 use crate::packets::{
     addresses::KnxAddress,
     apdu::APDU,
-    core::{
-        ConnectionRequest, ConnectionResponse, ConnectionstateRequest, ConnectionstateResponse,
-        DisconnectRequest, DisconnectResponse, HPAI,
-    },
+    core::{ConnectionRequest, ConnectionResponse, ConnectionstateRequest, ConnectionstateResponse, DisconnectRequest, DisconnectResponse, HPAI},
     emi::{CEMIMessageCode, LDataCon, LDataInd, LDataReqMessage, CEMI},
     tpdu::TPDU,
     tunneling::{TunnelingAck, TunnelingRequest},
@@ -42,7 +39,6 @@ impl ConnectionData {
     }
 }
 
-
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(whatever, display("{message}"))]
@@ -58,7 +54,10 @@ pub enum Error {
 
 impl From<Whatever> for Error {
     fn from(value: Whatever) -> Self {
-        Self::GenericError { message: value.to_string(), source: None }
+        Self::GenericError {
+            message: value.to_string(),
+            source: None,
+        }
     }
 }
 
@@ -69,7 +68,7 @@ impl From<String> for Error {
 }
 
 pub struct MyUdpSocket {
-    pub inner: UdpSocket
+    pub inner: UdpSocket,
 }
 
 impl MyUdpSocket {
@@ -98,7 +97,6 @@ enum TunnelingResponse {
     DisconnectRequest(DisconnectRequest),
 }
 
-
 struct UdpTransport {
     socket: Arc<MyUdpSocket>,
     connection_data: Arc<Mutex<Option<ConnectionData>>>,
@@ -108,7 +106,8 @@ struct UdpTransport {
 impl UdpTransport {
     pub async fn connect<A: ToSocketAddrs + std::fmt::Debug>(addr: A) -> Result<Self, Whatever> {
         let local_addr = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
-        let socket = UdpSocket::bind(local_addr).await
+        let socket = UdpSocket::bind(local_addr)
+            .await
             .with_whatever_context(|e| format!("Unable to get local address {:?}", e))?;
 
         let debug_addr = format!("{:?}", addr);
@@ -117,7 +116,7 @@ impl UdpTransport {
             whatever!("Unable to connect with target {:?}", e);
         }
         debug!("Connected with KnxIp {}", debug_addr);
-        let socket = Arc::new(MyUdpSocket {inner: socket});
+        let socket = Arc::new(MyUdpSocket { inner: socket });
 
         let connection_data: Arc<Mutex<Option<ConnectionData>>> = Arc::new(Mutex::new(None));
 
@@ -137,7 +136,6 @@ impl UdpTransport {
                 heart_beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
                 'main: loop {
-
                     // If connection data is none we don't have a valid connection
                     // with KNXIP device
                     //
@@ -201,7 +199,7 @@ impl UdpTransport {
                 let num = data.sequence_nr;
                 data.sequence_nr = data.sequence_nr.wrapping_add(1);
                 Ok(num)
-            },
+            }
             None => whatever!("Disconnected from knx device, NR"),
         }
     }
@@ -220,12 +218,8 @@ impl UdpTransport {
         }
     }
 
-
     pub async fn get_connectionstate(&self) -> TransportResult<ConnectionstateResponse> {
-        let req = ConnectionstateRequest::new(
-            self.get_communication_channel_id().await?,
-            self.get_control_endpoint().await?,
-        );
+        let req = ConnectionstateRequest::new(self.get_communication_channel_id().await?, self.get_control_endpoint().await?);
         if let Err(e) = self.socket.send(&req.packet()).await {
             whatever!("Unable to send connection state request {:?}", e);
         };
@@ -266,23 +260,13 @@ impl UdpTransport {
     }
 
     pub async fn disconnect(&self) -> Result<(), Whatever> {
-        let req =
-            DisconnectRequest::new(self.get_communication_channel_id().await?, self.get_control_endpoint().await?)
-                .packet();
-        debug!(
-            "Request disconnect for connection {}",
-            self.get_communication_channel_id().await?
-        );
-        self.socket
-            .send(&req)
-            .await
-            .expect("Unable to send request");
+        let req = DisconnectRequest::new(self.get_communication_channel_id().await?, self.get_control_endpoint().await?).packet();
+        debug!("Request disconnect for connection {}", self.get_communication_channel_id().await?);
+        self.socket.send(&req).await.expect("Unable to send request");
 
         let mut rx = self.rx.lock().await;
         match rx.recv().await {
-            Some(_resp) => {
-                Ok(())
-            },
+            Some(_resp) => Ok(()),
             None => whatever!("Transport closed before disconnection response"),
         }
     }
@@ -336,55 +320,52 @@ impl UdpTransport {
     }
 }
 
-    pub fn parse_response(resp: Vec<u8>) -> Result<TunnelingResponse, Whatever> {
-        let response_code = resp.get(2..4);
-        if response_code.is_some() {
-            if response_code == Some(&[0x04, 0x20]) {
-                debug!("Received tunneling request");
-                let mut resp_cursor = Cursor::new(resp.as_slice());
-                let resp = TunnelingRequest::from_packet(&mut resp_cursor)?;
-                debug!("Parsed tunneling request {:?}", resp);
-                Ok(TunnelingResponse::TunnelingRequest(resp))
-            } else if response_code == Some(&[0x04, 0x21]) {
-                debug!("Received tunneling ack");
-                let mut resp_cursor = Cursor::new(resp.as_slice());
-                let resp = TunnelingAck::from_packet(&mut resp_cursor)?;
-                debug!("Parsed tunneling ack {:?}", resp);
-                Ok(TunnelingResponse::TunnelingAck(resp))
-            } else if response_code == Some(&[0x04, 0x23]) {
-                debug!("Received feature response");
-                let mut resp_cursor = Cursor::new(resp.as_slice());
-                let resp = FeatureResp::from_packet(&mut resp_cursor)?;
-                debug!("Parsed feature response {:?}", resp);
-                Ok(TunnelingResponse::FeatureResponse(resp))
-            } else if response_code == Some(&[0x02, 0x0a]) {
-                debug!("Received disconnection response");
-                let mut resp_cursor = Cursor::new(resp.as_slice());
-                let resp = DisconnectResponse::from_packet(&mut resp_cursor)?;
-                debug!("Parsed disconnect response {:?}", resp);
-                Ok(TunnelingResponse::DisconnectResponse(resp))
-            } else if response_code == Some(&vec![0x02, 0x08]) {
-                debug!("Received connection state response");
-                let mut resp_cursor = Cursor::new(resp.as_slice());
-                let resp = ConnectionstateResponse::from_packet(&mut resp_cursor)?;
-                debug!("Parsed connection state response {:?}", resp);
-                Ok(TunnelingResponse::ConnectionstateResponse(resp))
-            } else if response_code == Some(&vec![0x02, 0x09]) {
-                debug!("Received disconnect request");
-                let mut resp_cursor = Cursor::new(resp.as_slice());
-                let resp = DisconnectRequest::from_packet(&mut resp_cursor)?;
-                debug!("Parsed disconnect request {:?}", resp);
-                Ok(TunnelingResponse::DisconnectRequest(resp))
-            } else {
-                whatever!("Unknown response code {:?}", response_code);
-            }
+pub fn parse_response(resp: Vec<u8>) -> Result<TunnelingResponse, Whatever> {
+    let response_code = resp.get(2..4);
+    if response_code.is_some() {
+        if response_code == Some(&[0x04, 0x20]) {
+            debug!("Received tunneling request");
+            let mut resp_cursor = Cursor::new(resp.as_slice());
+            let resp = TunnelingRequest::from_packet(&mut resp_cursor)?;
+            debug!("Parsed tunneling request {:?}", resp);
+            Ok(TunnelingResponse::TunnelingRequest(resp))
+        } else if response_code == Some(&[0x04, 0x21]) {
+            debug!("Received tunneling ack");
+            let mut resp_cursor = Cursor::new(resp.as_slice());
+            let resp = TunnelingAck::from_packet(&mut resp_cursor)?;
+            debug!("Parsed tunneling ack {:?}", resp);
+            Ok(TunnelingResponse::TunnelingAck(resp))
+        } else if response_code == Some(&[0x04, 0x23]) {
+            debug!("Received feature response");
+            let mut resp_cursor = Cursor::new(resp.as_slice());
+            let resp = FeatureResp::from_packet(&mut resp_cursor)?;
+            debug!("Parsed feature response {:?}", resp);
+            Ok(TunnelingResponse::FeatureResponse(resp))
+        } else if response_code == Some(&[0x02, 0x0a]) {
+            debug!("Received disconnection response");
+            let mut resp_cursor = Cursor::new(resp.as_slice());
+            let resp = DisconnectResponse::from_packet(&mut resp_cursor)?;
+            debug!("Parsed disconnect response {:?}", resp);
+            Ok(TunnelingResponse::DisconnectResponse(resp))
+        } else if response_code == Some(&vec![0x02, 0x08]) {
+            debug!("Received connection state response");
+            let mut resp_cursor = Cursor::new(resp.as_slice());
+            let resp = ConnectionstateResponse::from_packet(&mut resp_cursor)?;
+            debug!("Parsed connection state response {:?}", resp);
+            Ok(TunnelingResponse::ConnectionstateResponse(resp))
+        } else if response_code == Some(&vec![0x02, 0x09]) {
+            debug!("Received disconnect request");
+            let mut resp_cursor = Cursor::new(resp.as_slice());
+            let resp = DisconnectRequest::from_packet(&mut resp_cursor)?;
+            debug!("Parsed disconnect request {:?}", resp);
+            Ok(TunnelingResponse::DisconnectRequest(resp))
         } else {
-            whatever!(
-                "Tunneling response without a valid code {:?}",
-                response_code
-            )
+            whatever!("Unknown response code {:?}", response_code);
         }
+    } else {
+        whatever!("Tunneling response without a valid code {:?}", response_code)
     }
+}
 
 // Connects to KNXIP device
 //
@@ -426,8 +407,7 @@ async fn try_connection(socket: Arc<MyUdpSocket>) -> Result<ConnectionResponse, 
 pub(crate) async fn handle_recv_from_knx_device(socket: Arc<MyUdpSocket>, from_knx_tx: Sender<CEMI>) -> TransportResult<String> {
     loop {
         let mut data = vec![0; 100];
-        let count = socket.recv(&mut data).await
-            .map_err(|e| format!("UPD Socket was closed {:?}", e))?;
+        let count = socket.recv(&mut data).await.map_err(|e| format!("UPD Socket was closed {:?}", e))?;
 
         if count > 0 {
             let resp = parse_response(data)?;
@@ -449,26 +429,24 @@ pub(crate) async fn handle_recv_from_knx_device(socket: Arc<MyUdpSocket>, from_k
                         }
                     };
                     match from_knx_tx.send(cemi).await {
-                            Ok(_) => (),
-                            Err(e) => whatever!("Unable to pass received request from knx device, {:?}", e),
+                        Ok(_) => (),
+                        Err(e) => whatever!("Unable to pass received request from knx device, {:?}", e),
                     };
-                },
-                TunnelingResponse::TunnelingAck(_) => {
-
-                },
+                }
+                TunnelingResponse::TunnelingAck(_) => {}
                 TunnelingResponse::FeatureResponse(resp) => {
                     let ack = TunnelingAck::new(resp.communication_channel_id, resp.sequence_nr, 0);
 
                     if let Err(e) = socket.send(&ack.packet()).await {
                         whatever!("Unable to send tunneling ack to knxip target {:?}", e);
                     }
-                },
+                }
                 TunnelingResponse::ConnectionstateResponse(resp) => {
                     if resp.status != 0 {
                         warn!("Connection state response with error {}", resp.status);
                         whatever!("KNX device signaled a connection state error");
                     }
-                },
+                }
                 TunnelingResponse::DisconnectResponse(resp) => {
                     if resp.status == 0 {
                         info!("Successfully disconnected");
@@ -476,7 +454,7 @@ pub(crate) async fn handle_recv_from_knx_device(socket: Arc<MyUdpSocket>, from_k
                         warn!("Unable to disconnect, status code {:?}", resp);
                     }
                     break Ok("KNX device disconnected by our will".into());
-                },
+                }
                 TunnelingResponse::DisconnectRequest(req) => {
                     let disconnect_resp = DisconnectResponse::from_disconnect_request(&req);
                     if let Err(e) = socket.send(&disconnect_resp.packet()).await {
@@ -488,7 +466,6 @@ pub(crate) async fn handle_recv_from_knx_device(socket: Arc<MyUdpSocket>, from_k
         }
     }
 }
-
 
 pub struct UdpClient {
     timeout: Duration,
@@ -559,11 +536,7 @@ impl UdpClient {
         Ok(())
     }
 
-    pub async fn write_group_address_value(
-        &self,
-        addr: KnxAddress,
-        value: Vec<u8>,
-    ) -> TransportResult<()> {
+    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<()> {
         debug!("Write {:?} to {:?}", value, addr);
         let apdu = APDU::group_value_write(value);
         let tpdu = TPDU::t_data_group(apdu);
@@ -606,31 +579,20 @@ mod tests {
         let addr = mock_server.local_addr().expect("Mock server should have a valid local address");
         tokio::spawn(async move {
             let mut connection_req = vec![0; 100];
-            let (_, peer) = mock_server
-                .recv_from(&mut connection_req)
-                .await
-                .expect("Unable to receive connection request");
+            let (_, peer) = mock_server.recv_from(&mut connection_req).await.expect("Unable to receive connection request");
             info!("[Mock server] Received {:02x?}", connection_req);
             let mock_resp = vec![
-                0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00,
+                0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
             ];
-            mock_server
-                .send_to(&mock_resp, peer)
-                .await
-                .expect("Unable to send mock connection response");
+            mock_server.send_to(&mock_resp, peer).await.expect("Unable to send mock connection response");
             info!("[Mock server] Sended mock response");
         });
 
-        let client = UdpTransport::connect(addr)
-            .await
-            .expect("Unable to connect with mock server");
+        let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
         assert_eq!(
             client.get_communication_channel_id().await.expect("To be able to get channel id"),
             8,
@@ -642,34 +604,21 @@ mod tests {
     async fn test_get_connectionstate() {
         let _ = env_logger::try_init();
         env_logger::try_init();
-        let mock_server = UdpSocket::bind("0.0.0.0:0")
-            .await
-            .expect("Unable to bind to local UDP port");
-        let addr = mock_server
-            .local_addr()
-            .expect("Mock server should have a valid local address");
+        let mock_server = UdpSocket::bind("0.0.0.0:0").await.expect("Unable to bind to local UDP port");
+        let addr = mock_server.local_addr().expect("Mock server should have a valid local address");
 
         tokio::spawn(async move {
             let mut connection_req = vec![0; 100];
-            let (_, peer) = mock_server
-                .recv_from(&mut connection_req)
-                .await
-                .expect("Unable to receive connection request");
+            let (_, peer) = mock_server.recv_from(&mut connection_req).await.expect("Unable to receive connection request");
             info!("[Mock server] Received {:02x?}", connection_req);
             let mock_resp = vec![
-                0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00,
+                0x06, 0x10, 0x02, 0x06, 0x00, 0x14, 0x08, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
             ];
-            mock_server
-                .send_to(&mock_resp, peer)
-                .await
-                .expect("Unable to send mock connection response");
+            mock_server.send_to(&mock_resp, peer).await.expect("Unable to send mock connection response");
             info!("[Mock server] Sended mock response");
 
             let mut connectionstate_req = vec![0; 100];
@@ -678,8 +627,7 @@ mod tests {
                 .await
                 .expect("Unable to receive connection state request");
             let mut cursor = Cursor::new(connectionstate_req.as_slice());
-            let req = ConnectionstateRequest::from_packet(&mut cursor)
-                .expect("Invalid connectionstate request");
+            let req = ConnectionstateRequest::from_packet(&mut cursor).expect("Invalid connectionstate request");
             info!("[Mock server] Received connection state request {:?}", req);
             let connectionstate_resp = ConnectionstateResponse {
                 communication_channel_id: req.communication_channel_id,
@@ -691,13 +639,8 @@ mod tests {
                 .expect("Unable to respond to connection state request");
         });
 
-        let client = UdpTransport::connect(addr)
-            .await
-            .expect("Unable to connect with mock server");
-        let state = client
-            .get_connectionstate()
-            .await
-            .expect("Should be able to request connectionstate");
+        let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
+        let state = client.get_connectionstate().await.expect("Should be able to request connectionstate");
         assert_eq!(
             state.communication_channel_id,
             client.get_communication_channel_id().await.expect("To be able to get channel id"),

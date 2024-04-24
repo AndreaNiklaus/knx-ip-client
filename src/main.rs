@@ -1,5 +1,7 @@
 use knx_ip_client::{
-    dp_types::{PdtKnxB1U3, PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue}, packets::addresses::KnxAddress, transport::udp::UdpClient
+    dp_types::{PdtKnxB1U3, PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue},
+    packets::addresses::KnxAddress,
+    transport::udp::UdpClient,
 };
 use log::{info, warn};
 use snafu::{ResultExt, Whatever};
@@ -12,26 +14,30 @@ async fn main() -> Result<(), Whatever> {
 
     sleep(Duration::from_secs(2));
 
-/*
-    let resp = client.read_group_address_value(KnxAddress::try_from("1/2/1").unwrap()).await;
-    info!("Read 1: {:?}", resp);
+    /*
+        let resp = client.read_group_address_value(KnxAddress::try_from("1/2/1").unwrap()).await;
+        info!("Read 1: {:?}", resp);
 
-    if let Ok(resp) = resp {
-        match PdtKnxBit::from_bytes(resp) {
-            Ok(data) => info!("Read lamp status {:?}", data.get_value()),
-            Err(e) => warn!("Unable to read lamp status {:?}", e),
+        if let Ok(resp) = resp {
+            match PdtKnxBit::from_bytes(resp) {
+                Ok(data) => info!("Read lamp status {:?}", data.get_value()),
+                Err(e) => warn!("Unable to read lamp status {:?}", e),
+            }
         }
-    }
-*/
+    */
 
     let switch_on = PdtKnxBit::switch(false);
-    let resp = client.write_group_address_value(KnxAddress::try_from("1/0/1").unwrap(), switch_on.get_bytes()).await;
+    let resp = client
+        .write_group_address_value(KnxAddress::try_from("1/0/1").unwrap(), switch_on.get_bytes())
+        .await;
     info!("Write 1: {:?}", resp);
 
     sleep(Duration::from_secs(2));
 
     let switch_on = PdtKnxBit::switch(true);
-    let resp = client.write_group_address_value(KnxAddress::try_from("1/0/1").unwrap(), switch_on.get_bytes()).await;
+    let resp = client
+        .write_group_address_value(KnxAddress::try_from("1/0/1").unwrap(), switch_on.get_bytes())
+        .await;
     info!("Write 1: {:?}", resp);
 
     let resp = client.read_group_address_value(KnxAddress::try_from("1/3/1").unwrap()).await;
@@ -46,7 +52,9 @@ async fn main() -> Result<(), Whatever> {
 
     sleep(Duration::from_secs(2));
     let dim_down_10 = PdtKnxB1U3::dimming(false, 3);
-    let resp = client.write_group_address_value(KnxAddress::try_from("1/1/1").unwrap(), dim_down_10.get_bytes()).await;
+    let resp = client
+        .write_group_address_value(KnxAddress::try_from("1/1/1").unwrap(), dim_down_10.get_bytes())
+        .await;
     info!("Write 2: {:?}", resp);
 
     // let resp = client.read_group_address_value(KnxAddress::try_from("2/1/4").unwrap()).await;
@@ -64,7 +72,6 @@ async fn main() -> Result<(), Whatever> {
     //     let data = PdtKnxFloat::temp_from_bytes(resp);
     //     info!("Read temp {:?}", data.map(|pdt| pdt.get_value()));
     // }
-
 
     // let off = PdtKnxBit::switch(false);
     // let resp = client

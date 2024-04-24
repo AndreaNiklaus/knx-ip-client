@@ -1,3 +1,4 @@
+use super::udp::TransportResult;
 use crate::packets::addresses::KnxAddress;
 use crate::packets::apdu::APDU;
 use crate::packets::core::ConnectionResponse;
@@ -32,7 +33,6 @@ use tokio::net::ToSocketAddrs;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::interval;
-use super::udp::TransportResult;
 use tracing::instrument;
 
 struct ConnectionData {
@@ -61,7 +61,8 @@ struct UdpMonitorTransport {
 impl UdpMonitorTransport {
     pub async fn connect<A: ToSocketAddrs + Debug + Clone>(addr: A) -> Result<Self, Whatever> {
         let local_addr = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
-        let socket = UdpSocket::bind(local_addr).await
+        let socket = UdpSocket::bind(local_addr)
+            .await
             .with_whatever_context(|e| format!("Unable to get local address {:?}", e))?;
 
         let debug_addr = format!("{:?}", addr);
@@ -70,7 +71,7 @@ impl UdpMonitorTransport {
             whatever!("Unable to connect with target {:?}", e);
         }
         debug!("Connected with KnxIp {}", debug_addr);
-        let socket = Arc::new(MyUdpSocket {inner: socket});
+        let socket = Arc::new(MyUdpSocket { inner: socket });
 
         let connection_data: Arc<Mutex<Option<ConnectionData>>> = Arc::new(Mutex::new(None));
 
@@ -92,7 +93,6 @@ impl UdpMonitorTransport {
                 heart_beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
                 'main: loop {
-
                     // If connection data is none we don't have a valid connection
                     // with KNXIP device
                     //
@@ -190,7 +190,7 @@ impl UdpMonitorTransport {
                 let num = data.sequence_nr;
                 data.sequence_nr = data.sequence_nr.wrapping_add(1);
                 Ok(num)
-            },
+            }
             None => whatever!("Disconnected from knx device, NR"),
         }
     }
@@ -227,23 +227,12 @@ impl UdpMonitorTransport {
 
     pub async fn disconnect(&self) -> Result<u8, Whatever> {
         let communication_channel_id = self.communication_channel_id().await?;
-        let req =
-            DisconnectRequest::new(communication_channel_id, self.control_endpoint().await?)
-                .packet();
-        debug!(
-            "Request disconnect for connection {}",
-            communication_channel_id
-        );
-        self.socket
-            .send(&req)
-            .await
-            .expect("Unable to send request");
+        let req = DisconnectRequest::new(communication_channel_id, self.control_endpoint().await?).packet();
+        debug!("Request disconnect for connection {}", communication_channel_id);
+        self.socket.send(&req).await.expect("Unable to send request");
 
         let mut resp = vec![0; 100];
-        self.socket
-            .recv(&mut resp)
-            .await
-            .expect("Unable to get response");
+        self.socket.recv(&mut resp).await.expect("Unable to get response");
         let mut resp_cursor = Cursor::new(resp.as_slice());
 
         match DisconnectResponse::from_packet(&mut resp_cursor) {
@@ -251,14 +240,9 @@ impl UdpMonitorTransport {
                 debug!("Disconnect response status {}", resp.status);
                 Ok(resp.status)
             }
-            Err(e) => whatever!(
-                "Unable to request disconnection for id {}, {:?}",
-                communication_channel_id,
-                e
-            ),
+            Err(e) => whatever!("Unable to request disconnection for id {}, {:?}", communication_channel_id, e),
         }
     }
-
 }
 
 async fn enable_busmonitor(socket: &Arc<MyUdpSocket>, communication_channel_id: u8) -> Result<usize, Whatever> {
@@ -267,10 +251,7 @@ async fn enable_busmonitor(socket: &Arc<MyUdpSocket>, communication_channel_id: 
     debug!("FeatureSet request {:?}", req);
     let req = req.packet();
     debug!("Raw tunnel request: {:02x?}", req);
-    socket
-        .send(&req)
-        .await
-        .with_whatever_context(|e| format!("Unable to send request {:?}", e))
+    socket.send(&req).await.with_whatever_context(|e| format!("Unable to send request {:?}", e))
 }
 
 pub struct UdpMonitor {
@@ -281,7 +262,9 @@ impl UdpMonitor {
     pub async fn connect(addr: &str) -> Result<Self, Whatever> {
         let transport = Self::create_transport(addr.into()).await?;
 
-        Ok(Self { transport: Arc::new(Mutex::new(transport)) })
+        Ok(Self {
+            transport: Arc::new(Mutex::new(transport)),
+        })
     }
 
     pub async fn disconnect(&self) -> Result<u8, Whatever> {
@@ -331,7 +314,7 @@ impl UdpMonitor {
                 }
                 None => {
                     whatever!("Transport is closed");
-                },
+                }
             }
         }
     }
@@ -352,11 +335,7 @@ impl UdpMonitor {
         Ok(())
     }
 
-    pub async fn write_group_address_value(
-        &self,
-        addr: KnxAddress,
-        value: Vec<u8>,
-    ) -> TransportResult<()> {
+    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<()> {
         debug!("Write {:?} to {:?}", value, addr);
         let apdu = APDU::group_value_write(value);
         let tpdu = TPDU::t_data_group(apdu);
@@ -368,6 +347,4 @@ impl UdpMonitor {
         debug!("Write request sent to bus");
         Ok(())
     }
-
-
 }
