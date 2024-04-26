@@ -24,7 +24,6 @@ async fn main() -> Result<(), Whatever> {
                 Err(e) => warn!("Unable to read lamp status {:?}", e),
             }
         }
-    */
 
     let switch_on = PdtKnxBit::switch(false);
     let resp = client
@@ -56,6 +55,16 @@ async fn main() -> Result<(), Whatever> {
         .write_group_address_value(KnxAddress::try_from("1/1/1").unwrap(), dim_down_10.get_bytes())
         .await;
     info!("Write 2: {:?}", resp);
+
+    */
+
+    sleep(Duration::from_secs(2));
+    let dim_down_10 = PdtKnxB1U3::dimming(false, 3);
+    let resp = client
+        .write_group_address_value(KnxAddress::try_from("1/1/2").unwrap(), dim_down_10.get_bytes())
+        .await;
+    info!("Write 1: {:?}", resp);
+
 
     // let resp = client.read_group_address_value(KnxAddress::try_from("2/1/4").unwrap()).await;
     // info!("Read 1: {:?}", resp);

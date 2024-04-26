@@ -88,7 +88,7 @@ impl MyUdpSocket {
 
 pub type TransportResult<T> = Result<T, Error>;
 
-enum TunnelingResponse {
+pub enum TunnelingResponse {
     TunnelingRequest(TunnelingRequest),
     TunnelingAck(TunnelingAck),
     FeatureResponse(FeatureResp),
