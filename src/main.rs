@@ -1,5 +1,5 @@
 use knx_ip_client::{
-    dp_types::{PdtKnxB1U3, PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue},
+    dp_types::{Pdt, PdtKnxB1U3, PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue},
     packets::addresses::KnxAddress,
     transport::udp::UdpClient,
 };
@@ -61,7 +61,7 @@ async fn main() -> Result<(), Whatever> {
     sleep(Duration::from_secs(2));
     let dim_down_10 = PdtKnxB1U3::dimming(false, 3);
     let resp = client
-        .write_group_address_value(KnxAddress::try_from("1/1/2").unwrap(), dim_down_10.get_bytes())
+        .write_group_address_value(KnxAddress::try_from("1/1/2").unwrap(), dim_down_10.get_bytes(), true)
         .await;
     info!("Write 1: {:?}", resp);
 

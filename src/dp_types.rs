@@ -1,4 +1,17 @@
-use snafu::{whatever, OptionExt, Whatever};
+use std::io::Cursor;
+
+use byteorder::{BigEndian, ReadBytesExt};
+use snafu::{whatever, OptionExt, ResultExt, Whatever};
+
+pub trait Pdt<T> {
+    fn general(value: T) -> Self;
+    fn get_value(&self) -> T;
+    fn from_bytes(b: &[u8]) -> Result<Self, Whatever>
+    where
+        Self: Sized;
+    fn get_bytes(&self) -> Vec<u8>;
+    fn is_small(&self) -> bool; // Used to determin if we should use small APDU
+}
 
 pub struct PdtKnxScaledValue {
     pub code: String,
@@ -6,8 +19,8 @@ pub struct PdtKnxScaledValue {
     value: u8,
 }
 
-impl PdtKnxScaledValue {
-    pub fn general(value: u8) -> Self {
+impl Pdt<u8> for PdtKnxScaledValue {
+    fn general(value: u8) -> Self {
         Self {
             code: "5.x".to_string(),
             unit: "".to_string(),
@@ -15,6 +28,29 @@ impl PdtKnxScaledValue {
         }
     }
 
+    fn get_value(&self) -> u8 {
+        self.value
+    }
+
+    fn from_bytes(b: &[u8]) -> Result<Self, Whatever> {
+        let value = b.first().with_whatever_context(|| "At least one byte is needed")?;
+        Ok(Self {
+            code: "5.001".to_string(),
+            unit: "%".to_string(),
+            value: *value,
+        })
+    }
+
+    fn get_bytes(&self) -> Vec<u8> {
+        vec![self.value]
+    }
+
+    fn is_small(&self) -> bool {
+        false
+    }
+}
+
+impl PdtKnxScaledValue {
     pub fn scaling(percent: f32) -> Self {
         Self {
             code: "5.001".to_string(),
@@ -29,25 +65,46 @@ impl PdtKnxScaledValue {
         }
         (self.value - 1) as f32 / 2.54
     }
-
-    pub fn from_bytes(b: &[u8]) -> Result<Self, Whatever> {
-        let value = b.first().with_whatever_context(|| "At least one byte is needed")?;
-        Ok(Self {
-            code: "5.001".to_string(),
-            unit: "%".to_string(),
-            value: *value,
-        })
-    }
-
-    pub fn get_bytes(&self) -> Vec<u8> {
-        vec![self.value]
-    }
 }
 
 pub struct PdtKnxInt {
     pub code: String,
     pub unit: String,
     value: i16,
+}
+
+impl Pdt<i16> for PdtKnxInt {
+    fn general(value: i16) -> Self {
+        Self {
+            code: "8.x".to_string(),
+            unit: "".to_string(),
+            value,
+        }
+    }
+    fn get_value(&self) -> i16 {
+        self.value
+    }
+
+    fn from_bytes(b: &[u8]) -> Result<Self, Whatever>
+    where
+        Self: Sized,
+    {
+        let mut reader = Cursor::new(b);
+        let value = reader.read_i16::<BigEndian>().with_whatever_context(|e| "Unable to get first byte {e}")?;
+        Ok(Self {
+            code: "8.x".to_string(),
+            unit: "".to_string(),
+            value,
+        })
+    }
+
+    fn get_bytes(&self) -> Vec<u8> {
+        self.value.to_be_bytes().into()
+    }
+
+    fn is_small(&self) -> bool {
+        false
+    }
 }
 
 impl PdtKnxInt {
@@ -58,6 +115,7 @@ impl PdtKnxInt {
             value,
         }
     }
+
     pub fn percent_v16(value: i16) -> Self {
         Self {
             code: "8.010".to_string(),
@@ -65,20 +123,42 @@ impl PdtKnxInt {
             value: value * 100,
         }
     }
-
-    pub fn get_value(&self) -> i16 {
-        self.value
-    }
-
-    pub fn get_bytes(&self) -> Vec<u8> {
-        self.value.to_be_bytes().into()
-    }
 }
 
 pub struct PdtKnxFloat {
     pub code: String,
     pub unit: String,
     value: f32,
+}
+
+impl Pdt<f32> for PdtKnxFloat {
+    fn general(value: f32) -> Self {
+        Self {
+            code: "9.x".to_string(),
+            unit: "".to_string(),
+            value,
+        }
+    }
+    fn get_value(&self) -> f32 {
+        self.value
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Whatever> {
+        let value = bytes_to_float(bytes)?;
+        Ok(Self {
+            code: "9.x".to_string(),
+            unit: "".to_owned(),
+            value,
+        })
+    }
+
+    fn get_bytes(&self) -> Vec<u8> {
+        calimero_float_to_bytes(self.value)
+    }
+
+    fn is_small(&self) -> bool {
+        false
+    }
 }
 
 impl PdtKnxFloat {
@@ -89,25 +169,10 @@ impl PdtKnxFloat {
             value,
         }
     }
-    pub fn temp_from_bytes(bytes: Vec<u8>) -> Result<Self, Whatever> {
+
+    pub fn temp_from_bytes(bytes: &[u8]) -> Result<Self, Whatever> {
         let value = bytes_to_float(bytes)?;
         Ok(Self::temp(value))
-    }
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Whatever> {
-        let value = bytes_to_float(bytes)?;
-        Ok(Self {
-            code: "9.x".to_string(),
-            unit: "".to_owned(),
-            value,
-        })
-    }
-
-    pub fn get_bytes(&self) -> Vec<u8> {
-        calimero_float_to_bytes(self.value)
-    }
-
-    pub fn get_value(&self) -> f32 {
-        self.value
     }
 }
 
@@ -181,7 +246,7 @@ fn calimero_float_to_bytes(v: f32) -> Vec<u8> {
     vec![msb, lsb]
 }
 
-fn bytes_to_float(bytes: Vec<u8>) -> Result<f32, Whatever> {
+fn bytes_to_float(bytes: &[u8]) -> Result<f32, Whatever> {
     let value = u16::from_be_bytes(match bytes.try_into() {
         Ok(v) => v,
         Err(e) => whatever!("Wrong bytes count, {:?}", e),
@@ -207,20 +272,35 @@ pub struct PdtKnxByte {
     value: u8,
 }
 
-impl PdtKnxByte {
-    pub fn general(value: u8) -> Self {
+impl Pdt<u8> for PdtKnxByte {
+    fn general(value: u8) -> Self {
         Self {
             code: "20.x".to_string(),
             value,
         }
     }
 
-    pub fn get_value(&self) -> u8 {
+    fn get_value(&self) -> u8 {
         self.value
     }
 
-    pub fn get_bytes(&self) -> Vec<u8> {
+    fn get_bytes(&self) -> Vec<u8> {
         vec![self.value]
+    }
+
+    fn from_bytes(b: &[u8]) -> Result<Self, Whatever>
+    where
+        Self: Sized,
+    {
+        let value = *b.get(0).with_whatever_context(|| "One byte is needes")?;
+        Ok(Self {
+            code: "20.x".to_string(),
+            value,
+        })
+    }
+
+    fn is_small(&self) -> bool {
+        todo!()
     }
 }
 
@@ -229,20 +309,36 @@ pub struct PdtKnxULong {
     value: u32,
 }
 
-impl PdtKnxULong {
-    pub fn general(value: u32) -> Self {
+impl Pdt<u32> for PdtKnxULong {
+    fn general(value: u32) -> Self {
         Self {
             code: "12.x".to_string(),
             value,
         }
     }
 
-    pub fn get_value(&self) -> u32 {
+    fn get_value(&self) -> u32 {
         self.value
     }
 
-    pub fn get_bytes(&self) -> Vec<u8> {
+    fn get_bytes(&self) -> Vec<u8> {
         self.value.to_be_bytes().to_vec()
+    }
+
+    fn from_bytes(b: &[u8]) -> Result<Self, Whatever>
+    where
+        Self: Sized,
+    {
+        let mut reader = Cursor::new(b);
+        let value = reader.read_u32::<BigEndian>().with_whatever_context(|e| "Unable to get 4 bytes {e}")?;
+        Ok(Self {
+            code: "8.x".to_string(),
+            value,
+        })
+    }
+
+    fn is_small(&self) -> bool {
+        false
     }
 }
 
@@ -251,34 +347,40 @@ pub struct PdtKnxBit {
     value: bool,
 }
 
-impl PdtKnxBit {
-    pub fn general(value: bool) -> Self {
+impl Pdt<bool> for PdtKnxBit {
+    fn general(value: bool) -> Self {
         Self {
             code: "1.x".to_string(),
             value,
         }
     }
 
-    pub fn switch(value: bool) -> Self {
-        Self {
-            code: "1.001".to_string(),
-            value,
-        }
-    }
-
-    pub fn get_value(&self) -> bool {
+    fn get_value(&self) -> bool {
         self.value
     }
 
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Whatever> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Whatever> {
         let value = bytes.get(0).with_whatever_context(|| "Should have at least one byte")? > &0;
         Ok(Self {
             code: "1.x".to_string(),
             value,
         })
     }
-    pub fn get_bytes(&self) -> Vec<u8> {
+    fn get_bytes(&self) -> Vec<u8> {
         vec![self.value as u8]
+    }
+
+    fn is_small(&self) -> bool {
+        true
+    }
+}
+
+impl PdtKnxBit {
+    pub fn switch(value: bool) -> Self {
+        Self {
+            code: "1.001".to_string(),
+            value,
+        }
     }
 }
 
@@ -286,6 +388,42 @@ pub struct PdtKnxB1U3 {
     pub code: String,
     bit: bool,
     step: u8,
+}
+
+impl Pdt<u8> for PdtKnxB1U3 {
+    fn get_value(&self) -> u8 {
+        let mut value: u8 = if self.bit { 8 } else { 0 };
+        value |= self.step;
+        value
+    }
+
+    fn get_bytes(&self) -> Vec<u8> {
+        vec![self.get_value() as u8]
+    }
+
+    fn general(value: u8) -> Self {
+        Self {
+            code: "3.x".to_string(),
+            bit: (value & 8) > 0,
+            step: value & 0b111,
+        }
+    }
+
+    fn from_bytes(b: &[u8]) -> Result<Self, Whatever>
+    where
+        Self: Sized,
+    {
+        let value = b.get(0).with_whatever_context(|| "Should have at least one byte")?;
+        Ok(Self {
+            code: "0.x".to_string(),
+            bit: (value & 8) > 0,
+            step: value & 0b111,
+        })
+    }
+
+    fn is_small(&self) -> bool {
+        true
+    }
 }
 
 impl PdtKnxB1U3 {
@@ -304,24 +442,6 @@ impl PdtKnxB1U3 {
             step: step & 0b111,
         }
     }
-
-    pub fn from_value(value: u8) -> Self {
-        Self {
-            code: "3.x".to_string(),
-            bit: (value & 8) > 0,
-            step: value & 0b111,
-        }
-    }
-
-    pub fn get_value(&self) -> u8 {
-        let mut value: u8 = if self.bit { 8 } else { 0 };
-        value |= self.step;
-        value
-    }
-
-    pub fn get_bytes(&self) -> Vec<u8> {
-        vec![self.get_value() as u8]
-    }
 }
 
 #[cfg(test)]
@@ -334,7 +454,7 @@ mod tests {
 
         for value in test_values.into_iter() {
             let bytes = calimero_float_to_bytes(value);
-            let parsed_value = bytes_to_float(bytes).expect("Should be able to parse value");
+            let parsed_value = bytes_to_float(bytes.as_slice()).expect("Should be able to parse value");
             assert_eq!(value, parsed_value);
         }
     }

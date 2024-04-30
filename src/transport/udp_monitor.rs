@@ -335,9 +335,9 @@ impl UdpMonitor {
         Ok(())
     }
 
-    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<()> {
+    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>, small: bool) -> TransportResult<()> {
         debug!("Write {:?} to {:?}", value, addr);
-        let apdu = APDU::group_value_write(value);
+        let apdu = APDU::group_value_write(value, small);
         let tpdu = TPDU::t_data_group(apdu);
         let req = LDataReqMessage::new(addr, tpdu);
         debug!("LDataReq {:?}", req);

@@ -536,9 +536,9 @@ impl UdpClient {
         Ok(())
     }
 
-    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>) -> TransportResult<()> {
+    pub async fn write_group_address_value(&self, addr: KnxAddress, value: Vec<u8>, small: bool) -> TransportResult<()> {
         debug!("Write {:?} to {:?}", value, addr);
-        let apdu = APDU::group_value_write(value);
+        let apdu = APDU::group_value_write(value, small);
         let tpdu = TPDU::t_data_group(apdu);
         let req = LDataReqMessage::new(addr, tpdu);
         debug!("LDataReq {:?}", req);
@@ -593,6 +593,14 @@ mod tests {
         });
 
         let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
+        let mut max_delay = 10;
+        while max_delay > 0 {
+            if client.connection_data.lock().await.is_some() {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+            max_delay -= 1;
+        }
         assert_eq!(
             client.get_communication_channel_id().await.expect("To be able to get channel id"),
             8,
@@ -603,7 +611,6 @@ mod tests {
     #[tokio::test]
     async fn test_get_connectionstate() {
         let _ = env_logger::try_init();
-        env_logger::try_init();
         let mock_server = UdpSocket::bind("0.0.0.0:0").await.expect("Unable to bind to local UDP port");
         let addr = mock_server.local_addr().expect("Mock server should have a valid local address");
 
@@ -651,6 +658,7 @@ mod tests {
                 panic!("Unable to connect with mock server");
             }
         }
+        debug!("Request connection state");
         let state = client.get_connectionstate().await.expect("Should be able to request connectionstate");
         assert_eq!(
             state.communication_channel_id,

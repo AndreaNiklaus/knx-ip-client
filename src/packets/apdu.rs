@@ -1,3 +1,5 @@
+use crate::dp_types::Pdt;
+
 // Application Protocol Data Unit (APDU)
 // 03.03.07 Application Layer chapter 2
 //
@@ -25,8 +27,20 @@ impl APDU {
         }
     }
 
-    pub fn group_value_write(data: Vec<u8>) -> Self {
-        let data = if data.len() == 1 { APDUData::Small(data[0]) } else { APDUData::Big(data) };
+    pub fn group_value_write(data: Vec<u8>, small: bool) -> Self {
+        let data = if small { APDUData::Small(data[0]) } else { APDUData::Big(data) };
+        Self {
+            apci: APCI::a_group_value_write(),
+            data,
+        }
+    }
+
+    pub fn group_value_write_pd<T>(pd: impl Pdt<T>) -> Self {
+        let data = if pd.is_small() {
+            APDUData::Small(*pd.get_bytes().first().unwrap_or(&0))
+        } else {
+            APDUData::Big(pd.get_bytes())
+        };
         Self {
             apci: APCI::a_group_value_write(),
             data,
