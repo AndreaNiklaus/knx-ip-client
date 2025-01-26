@@ -304,6 +304,44 @@ impl Pdt<u8> for PdtKnxByte {
     }
 }
 
+pub struct PdtKnxWord {
+    pub code: String,
+    value: u16,
+}
+
+impl Pdt<u16> for PdtKnxWord {
+    fn general(value: u16) -> Self {
+        Self {
+            code: "7.x".to_string(),
+            value,
+        }
+    }
+
+    fn get_value(&self) -> u16 {
+        self.value
+    }
+
+    fn get_bytes(&self) -> Vec<u8> {
+        self.value.to_be_bytes().to_vec()
+    }
+
+    fn from_bytes(b: &[u8]) -> Result<Self, Whatever>
+    where
+        Self: Sized,
+    {
+        let mut reader = Cursor::new(b);
+        let value = reader.read_u16::<BigEndian>().with_whatever_context(|e| "Unable to get 2 bytes {e}")?;
+        Ok(Self {
+            code: "7.x".to_string(),
+            value,
+        })
+    }
+
+    fn is_small(&self) -> bool {
+        false
+    }
+}
+
 pub struct PdtKnxULong {
     pub code: String,
     value: u32,
