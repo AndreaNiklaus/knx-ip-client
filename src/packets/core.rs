@@ -171,6 +171,20 @@ impl ConnectionRequest {
         }
     }
 
+    /// Override the control endpoint HPAI (IP:port) used in the connection request.
+    ///
+    /// Some KNXnet/IP servers require a concrete endpoint and do not accept `0.0.0.0:0`.
+    pub fn set_control_endpoint(&mut self, address: SocketAddrV4) {
+        self.control_endpoint.set_addr(address);
+    }
+
+    /// Override the data endpoint HPAI (IP:port) used in the connection request.
+    ///
+    /// Some KNXnet/IP servers require a concrete endpoint and do not accept `0.0.0.0:0`.
+    pub fn set_data_endpoint(&mut self, address: SocketAddrV4) {
+        self.data_endpoint.set_addr(address);
+    }
+
     pub fn busmonitor() -> Self {
         Self {
             control_endpoint: HPAI::udp(),
