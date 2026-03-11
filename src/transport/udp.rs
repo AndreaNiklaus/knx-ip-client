@@ -382,7 +382,18 @@ pub(crate) async fn connect(socket: Arc<MyUdpSocket>) -> ConnectionResponse {
 }
 
 async fn try_connection(socket: Arc<MyUdpSocket>) -> Result<ConnectionResponse, Whatever> {
-    let req = ConnectionRequest::tunnel().packet();
+    // Some KNXnet/IP servers require a concrete HPAI in the connection request.
+    // Use the bound local socket address (IP + ephemeral port) instead of the default 0.0.0.0:0.
+    let local_addr = match socket.inner.local_addr() {
+        Ok(SocketAddr::V4(addr)) => addr,
+        Ok(SocketAddr::V6(_addr)) => whatever!("Ipv6 socket address where IpV4 was expected"),
+        Err(e) => whatever!("Unable to get local address {:?}", e),
+    };
+
+    let mut req = ConnectionRequest::tunnel();
+    req.set_control_endpoint(local_addr);
+    req.set_data_endpoint(local_addr);
+    let req = req.packet();
     debug!("Sending tunnel connection request {:0x?}", req);
     if let Err(e) = socket.send(&req).await {
         whatever!("Unable to send connection request {:?}", e);
