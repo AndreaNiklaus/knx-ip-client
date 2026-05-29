@@ -33,7 +33,7 @@ impl LDataCon {
         };
 
         let frame_type = (control1 & 0x80) > 0;
-        let repetition = (control1 & (1 << 5)) > 0;
+        let not_repeated = (control1 & (1 << 5)) > 0;
         let system_broadcast = (control1 & (1 << 4)) > 0;
         let ack_request = (control1 & (1 << 1)) > 0;
         let confirm = (control1 & 1) == 0;
@@ -44,7 +44,7 @@ impl LDataCon {
                 src,
                 dest,
                 frame_type,
-                repetition,
+                not_repeated,
                 system_broadcast,
                 ack_request,
             },
@@ -58,7 +58,7 @@ pub struct LData {
     pub src: u16,
     pub dest: u16,
     pub frame_type: bool,
-    pub repetition: bool, // 1: not repeated, 0: repeated
+    pub not_repeated: bool, // 1: not repeated, 0: repeated
     pub system_broadcast: bool,
     pub ack_request: bool,
 }
@@ -103,7 +103,7 @@ impl LDataInd {
         };
 
         let frame_type = (control1 & 0x80) > 0;
-        let repetition = (control1 & (1 << 5)) > 0;
+        let not_repeated = (control1 & (1 << 5)) > 0;
         let system_broadcast = (control1 & (1 << 4)) > 0;
         let ack_request = (control1 & (1 << 1)) > 0;
 
@@ -129,7 +129,7 @@ impl LDataInd {
                 src,
                 dest,
                 frame_type,
-                repetition,
+                not_repeated,
                 system_broadcast,
                 ack_request,
             },

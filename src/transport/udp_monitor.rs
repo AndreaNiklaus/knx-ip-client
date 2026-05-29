@@ -297,8 +297,8 @@ impl UdpMonitor {
                 Some(cemi) if cemi.msg_code == CEMIMessageCode::LDataInd as u8 => {
                     let data_ind = LDataInd::from_cemi(cemi)?;
                     debug!("Parsed indication cEMI {:?}", data_ind);
-                    if data_ind.l_data.repetition {
-                        warn!("This message is a repetition");
+                    if !data_ind.l_data.not_repeated {
+                        warn!("This message is repeated");
                     }
                     return Ok(data_ind);
                 }
