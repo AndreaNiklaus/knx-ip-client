@@ -59,14 +59,18 @@ struct UdpMonitorTransport {
 }
 
 impl UdpMonitorTransport {
-    pub async fn connect<A: ToSocketAddrs + Debug + Clone>(addr: A) -> Result<Self, Whatever> {
+    pub async fn connect<A: ToSocketAddrs + Debug + Clone>(addr: A, nat_mode: bool) -> Result<Self, Whatever> {
         let local_addr = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
         let socket = UdpSocket::bind(local_addr)
             .await
             .with_whatever_context(|e| format!("Unable to get local address {:?}", e))?;
 
         let debug_addr = format!("{:?}", addr);
-        debug!("Connecting with KnxIp {}", debug_addr);
+        let advertised_endpoint = if nat_mode { "0.0.0.0:0" } else { "local_addr()" };
+        debug!(
+            "Connecting with KnxIp {} (nat_mode={}, advertised_endpoint={})",
+            debug_addr, nat_mode, advertised_endpoint
+        );
         if let Err(e) = socket.connect(addr).await {
             whatever!("Unable to connect with target {:?}", e);
         }
@@ -82,6 +86,7 @@ impl UdpMonitorTransport {
             let socket = socket.clone();
             let connection_data = connection_data.clone();
             let on_connection = on_connection.clone();
+            let nat_mode = nat_mode;
 
             async move {
                 // Interval should be 60 seconds as stated in
@@ -98,7 +103,7 @@ impl UdpMonitorTransport {
                     //
                     if connection_data.lock().await.is_none() {
                         info!("No valid connection with KNXIP device, create it");
-                        let connection = connect(socket.clone()).await;
+                        let connection = connect(socket.clone(), nat_mode).await;
                         let communication_channel_id = connection.get_communication_channel_id();
 
                         if enable_busmonitor(&socket, communication_channel_id).await.is_err() {
@@ -260,7 +265,14 @@ pub struct UdpMonitor {
 
 impl UdpMonitor {
     pub async fn connect(addr: &str) -> Result<Self, Whatever> {
-        let transport = Self::create_transport(addr.into()).await?;
+        let transport = Self::create_transport(addr.into(), false).await?;
+        Ok(Self {
+            transport: Arc::new(Mutex::new(transport)),
+        })
+    }
+
+    pub async fn connect_with_nat_mode(addr: &str, nat_mode: bool) -> Result<Self, Whatever> {
+        let transport = Self::create_transport(addr.into(), nat_mode).await?;
 
         Ok(Self {
             transport: Arc::new(Mutex::new(transport)),
@@ -279,8 +291,8 @@ impl UdpMonitor {
         self.transport.lock().await.add_on_connect(tx).await
     }
 
-    async fn create_transport(addr: String) -> Result<UdpMonitorTransport, Whatever> {
-        let transport = UdpMonitorTransport::connect(addr).await?;
+    async fn create_transport(addr: String, nat_mode: bool) -> Result<UdpMonitorTransport, Whatever> {
+        let transport = UdpMonitorTransport::connect(addr, nat_mode).await?;
 
         Ok(transport)
     }

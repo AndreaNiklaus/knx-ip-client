@@ -104,14 +104,18 @@ struct UdpTransport {
 }
 
 impl UdpTransport {
-    pub async fn connect<A: ToSocketAddrs + std::fmt::Debug>(addr: A) -> Result<Self, Whatever> {
+    pub async fn connect<A: ToSocketAddrs + std::fmt::Debug>(addr: A, nat_mode: bool) -> Result<Self, Whatever> {
         let local_addr = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
         let socket = UdpSocket::bind(local_addr)
             .await
             .with_whatever_context(|e| format!("Unable to get local address {:?}", e))?;
 
         let debug_addr = format!("{:?}", addr);
-        debug!("Connecting with KnxIp {}", debug_addr);
+        let advertised_endpoint = if nat_mode { "0.0.0.0:0" } else { "local_addr()" };
+        debug!(
+            "Connecting with KnxIp {} (nat_mode={}, advertised_endpoint={})",
+            debug_addr, nat_mode, advertised_endpoint
+        );
         if let Err(e) = socket.connect(addr).await {
             whatever!("Unable to connect with target {:?}", e);
         }
@@ -125,6 +129,7 @@ impl UdpTransport {
         tokio::spawn({
             let socket = socket.clone();
             let connection_data = connection_data.clone();
+            let nat_mode = nat_mode;
 
             async move {
                 // Interval should be 60 seconds as stated in
@@ -141,7 +146,7 @@ impl UdpTransport {
                     //
                     if connection_data.lock().await.is_none() {
                         info!("No valid connection with KNXIP device, create it");
-                        let connection = connect(socket.clone()).await;
+                        let connection = connect(socket.clone(), nat_mode).await;
                         let communication_channel_id = connection.get_communication_channel_id();
 
                         info!("Created communication channel ID {:?}", communication_channel_id);
@@ -369,9 +374,9 @@ pub fn parse_response(resp: Vec<u8>) -> Result<TunnelingResponse, Whatever> {
 
 // Connects to KNXIP device
 //
-pub(crate) async fn connect(socket: Arc<MyUdpSocket>) -> ConnectionResponse {
+pub(crate) async fn connect(socket: Arc<MyUdpSocket>, nat_mode: bool) -> ConnectionResponse {
     loop {
-        match try_connection(socket.clone()).await {
+        match try_connection(socket.clone(), nat_mode).await {
             Ok(connection) => return connection,
             Err(e) => {
                 warn!("Unable to connect with KNXIP device, retry in 10 seconds {:?}", e);
@@ -381,9 +386,9 @@ pub(crate) async fn connect(socket: Arc<MyUdpSocket>) -> ConnectionResponse {
     }
 }
 
-async fn try_connection(socket: Arc<MyUdpSocket>) -> Result<ConnectionResponse, Whatever> {
-    // Some KNXnet/IP servers require a concrete HPAI in the connection request.
-    // Use the bound local socket address (IP + ephemeral port) instead of the default 0.0.0.0:0.
+async fn try_connection(socket: Arc<MyUdpSocket>, nat_mode: bool) -> Result<ConnectionResponse, Whatever> {
+    // NAT mode: advertise wildcard HPAI.
+    // Normal mode: advertise bound local socket address.
     let local_addr = match socket.inner.local_addr() {
         Ok(SocketAddr::V4(addr)) => addr,
         Ok(SocketAddr::V6(_addr)) => whatever!("Ipv6 socket address where IpV4 was expected"),
@@ -391,8 +396,13 @@ async fn try_connection(socket: Arc<MyUdpSocket>) -> Result<ConnectionResponse, 
     };
 
     let mut req = ConnectionRequest::tunnel();
-    req.set_control_endpoint(local_addr);
-    req.set_data_endpoint(local_addr);
+    if nat_mode {
+        debug!("Using NAT mode HPAI 0.0.0.0:0 for control/data endpoint");
+    } else {
+        debug!("Using local_addr() HPAI {} for control/data endpoint", local_addr);
+        req.set_control_endpoint(local_addr);
+        req.set_data_endpoint(local_addr);
+    }
     let req = req.packet();
     debug!("Sending tunnel connection request {:0x?}", req);
     if let Err(e) = socket.send(&req).await {
@@ -485,7 +495,7 @@ pub struct UdpClient {
 
 impl UdpClient {
     pub async fn connect<A: ToSocketAddrs + std::fmt::Debug>(addr: A) -> Result<Self, Whatever> {
-        let transport = Arc::new(Mutex::new(UdpTransport::connect(addr).await?));
+        let transport = Arc::new(Mutex::new(UdpTransport::connect(addr, false).await?));
 
         Ok(Self {
             transport,
@@ -603,7 +613,7 @@ mod tests {
             info!("[Mock server] Sended mock response");
         });
 
-        let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
+        let client = UdpTransport::connect(addr, false).await.expect("Unable to connect with mock server");
         let mut max_delay = 10;
         while max_delay > 0 {
             if client.connection_data.lock().await.is_some() {
@@ -657,7 +667,7 @@ mod tests {
                 .expect("Unable to respond to connection state request");
         });
 
-        let client = UdpTransport::connect(addr).await.expect("Unable to connect with mock server");
+        let client = UdpTransport::connect(addr, false).await.expect("Unable to connect with mock server");
         let mut counter = 100;
         loop {
             sleep(Duration::from_millis(10)).await;
