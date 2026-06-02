@@ -1,7 +1,7 @@
 use knx_ip_client::{
     dp_types::{Pdt, PdtKnxB1U3, PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue},
     packets::addresses::KnxAddress,
-    transport::udp::UdpClient,
+    transport::{udp::UdpClient, udp_monitor::UdpMonitor},
 };
 use log::{info, warn};
 use snafu::{ResultExt, Whatever};
@@ -10,9 +10,9 @@ use std::{sync::Arc, thread::sleep, time::Duration};
 #[tokio::main]
 async fn main() -> Result<(), Whatever> {
     env_logger::init();
-    let client = Arc::new(UdpClient::connect("192.168.10.19:3671").await?);
+    // let client = Arc::new(UdpClient::connect_with_nat_mode("192.168.10.229:3671", true).await?);
 
-    sleep(Duration::from_secs(2));
+    // sleep(Duration::from_secs(2));
 
     /*
         let resp = client.read_group_address_value(KnxAddress::try_from("1/2/1").unwrap()).await;
@@ -58,13 +58,12 @@ async fn main() -> Result<(), Whatever> {
 
     */
 
-    sleep(Duration::from_secs(2));
-    let dim_down_10 = PdtKnxB1U3::dimming(false, 3);
-    let resp = client
-        .write_group_address_value(KnxAddress::try_from("1/1/2").unwrap(), dim_down_10.get_bytes(), true)
-        .await;
-    info!("Write 1: {:?}", resp);
-
+    // sleep(Duration::from_secs(2));
+    // let dim_down_10 = PdtKnxB1U3::dimming(false, 3);
+    // let resp = client
+    // .write_group_address_value(KnxAddress::try_from("1/1/2").unwrap(), dim_down_10.get_bytes(), true)
+    // .await;
+    // info!("Write 1: {:?}", resp);
 
     // let resp = client.read_group_address_value(KnxAddress::try_from("2/1/4").unwrap()).await;
     // info!("Read 1: {:?}", resp);
@@ -94,8 +93,16 @@ async fn main() -> Result<(), Whatever> {
     // let reason = read(client.clone()).await;
     // warn!("Unable to read from knx {:?}", reason);
 
-    info!("Request disconnection");
-    client.disconnect().await?;
+    // info!("Request disconnection");
+    // client.disconnect().await?;
+
+    let client = Arc::new(UdpClient::connect_with_nat_mode("emerald43.internet-box.ch:13672", true).await?);
+    sleep(Duration::from_secs(2));
+    let toggle_off = PdtKnxBit::switch(false);
+    let resp = client
+        .write_group_address_value(KnxAddress::try_from("1/1/0").unwrap(), toggle_off.get_bytes(), true)
+        .await;
+    info!("Write 1: {:?}", resp);
 
     Ok(())
 }

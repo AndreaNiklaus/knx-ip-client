@@ -150,7 +150,7 @@ pub struct LDataReqMessage {
 impl LDataReqMessage {
     pub fn new(dest_address: KnxAddress, tpdu: TPDU) -> Self {
         Self {
-            priority: 0b11,
+            priority: 0b01,
             dest_address,
             tpdu,
         }
