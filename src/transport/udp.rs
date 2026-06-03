@@ -137,6 +137,9 @@ impl UdpTransport {
                 // prevents many heart beats when connection disconnect and restores
                 //
                 heart_beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                // Do not send heart_beat as soon as we connect
+                //
+                heart_beat.tick().await;
 
                 'main: loop {
                     // If connection data is none we don't have a valid connection
@@ -649,12 +652,12 @@ mod tests {
                 0x00, 0x00, 0x00, 0x00,
             ];
             mock_server.send_to(&mock_resp, peer).await.expect("Unable to send mock connection response");
-            info!("[Mock server] Sended mock response");
+            info!("[Mock server] Sended response to connection request");
 
             let mut connectionstate_req = vec![0; 100];
-            let (_, peer) = mock_server
-                .recv_from(&mut connectionstate_req)
+            let (_, peer) = timeout(Duration::from_secs(5), mock_server.recv_from(&mut connectionstate_req))
                 .await
+                .expect("[Mock server] Timed out waiting connection state request")
                 .expect("Unable to receive connection state request");
             let mut cursor = Cursor::new(connectionstate_req.as_slice());
             let req = ConnectionstateRequest::from_packet(&mut cursor).expect("Invalid connectionstate request");
@@ -689,7 +692,5 @@ mod tests {
             "Communication channel id should match client value"
         );
         assert_eq!(state.status, 0, "Connection state should be ok");
-        info!("Closing client");
-        client.disconnect().await.expect("unable to disconnect");
     }
 }
