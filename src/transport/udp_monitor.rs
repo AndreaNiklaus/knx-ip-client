@@ -1,7 +1,6 @@
 use super::udp::TransportResult;
 use crate::packets::addresses::KnxAddress;
 use crate::packets::apdu::APDU;
-use crate::packets::core::ConnectionResponse;
 use crate::packets::core::ConnectionstateRequest;
 use crate::packets::core::DisconnectRequest;
 use crate::packets::core::DisconnectResponse;
@@ -17,6 +16,7 @@ use crate::packets::tunneling::KnxIpFeature;
 use crate::packets::tunneling::TunnelingRequest;
 use crate::transport::udp::connect;
 use crate::transport::udp::handle_recv_from_knx_device;
+use crate::transport::udp::ConnectionData;
 use crate::transport::udp::MyUdpSocket;
 use log::debug;
 use log::info;
@@ -34,22 +34,6 @@ use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::interval;
 use tracing::instrument;
-
-struct ConnectionData {
-    communication_channel_id: u8,
-    control_endpoint: HPAI,
-    sequence_nr: u8,
-}
-
-impl ConnectionData {
-    pub fn from_connection_response(connection: ConnectionResponse) -> Self {
-        Self {
-            sequence_nr: 1,
-            communication_channel_id: connection.get_communication_channel_id(),
-            control_endpoint: connection.get_data_endpoint(),
-        }
-    }
-}
 
 struct UdpMonitorTransport {
     socket: Arc<MyUdpSocket>,
@@ -125,7 +109,7 @@ impl UdpMonitorTransport {
 
                     loop {
                         tokio::select! {
-                            resp = handle_recv_from_knx_device(socket.clone(), from_knx_tx.clone()) => {
+                            resp = handle_recv_from_knx_device(socket.clone(), from_knx_tx.clone(), connection_data.clone()) => {
                                 info!("Recieve messages from knx device task exited with result {:?}", resp);
                                 if resp.is_ok() {
                                     break 'main;
@@ -188,13 +172,9 @@ impl UdpMonitorTransport {
         }
     }
 
-    async fn get_next_sequence_nr(&self) -> Result<u8, Whatever> {
+    async fn get_sequence_nr(&self) -> Result<u8, Whatever> {
         match self.connection_data.lock().await.as_mut() {
-            Some(data) => {
-                let num = data.sequence_nr;
-                data.sequence_nr = data.sequence_nr.wrapping_add(1);
-                Ok(num)
-            }
+            Some(data) => Ok(data.sequence_nr),
             None => whatever!("Disconnected from knx device, NR"),
         }
     }
@@ -204,7 +184,7 @@ impl UdpMonitorTransport {
     }
 
     pub async fn set_feature(&self, feature: KnxIpFeature, value: u8) -> Result<(), Whatever> {
-        let sequence_nr = self.get_next_sequence_nr().await?;
+        let sequence_nr = self.get_sequence_nr().await?;
         let req = FeatureSet::new(self.communication_channel_id().await?, sequence_nr, feature, value);
         debug!("FeatureSet request {:?}", req);
         let req = req.packet();
@@ -216,7 +196,7 @@ impl UdpMonitorTransport {
     }
 
     pub async fn tunnel_req(&self, req: Vec<u8>) -> Result<(), Whatever> {
-        let sequence_nr = self.get_next_sequence_nr().await?;
+        let sequence_nr = self.get_sequence_nr().await?;
         let tunneled_req = TunnelingRequest::new(self.communication_channel_id().await?, sequence_nr, req);
         debug!("TunnelingRequest {:?}", tunneled_req);
         let req = tunneled_req.packet();

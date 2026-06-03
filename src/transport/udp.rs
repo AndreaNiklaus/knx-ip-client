@@ -22,10 +22,10 @@ use crate::packets::{
     tunneling::{TunnelingAck, TunnelingRequest},
 };
 
-struct ConnectionData {
-    communication_channel_id: u8,
-    control_endpoint: HPAI,
-    sequence_nr: u8,
+pub struct ConnectionData {
+    pub communication_channel_id: u8,
+    pub control_endpoint: HPAI,
+    pub sequence_nr: u8,
 }
 
 impl ConnectionData {
@@ -34,6 +34,12 @@ impl ConnectionData {
             sequence_nr: 0,
             communication_channel_id: connection.get_communication_channel_id(),
             control_endpoint: connection.get_data_endpoint(),
+        }
+    }
+
+    pub fn increment_sequence_nr(&mut self, ack_nr: u8) {
+        if self.sequence_nr == ack_nr {
+            self.sequence_nr += 1;
         }
     }
 }
@@ -157,7 +163,7 @@ impl UdpTransport {
 
                     'recv: loop {
                         tokio::select! {
-                            resp = handle_recv_from_knx_device(socket.clone(), from_knx_tx.clone()) => {
+                            resp = handle_recv_from_knx_device(socket.clone(), from_knx_tx.clone(), connection_data.clone()) => {
                                 info!("Recieve messages from knx device task exited with result {:?}", resp);
                                 if resp.is_ok() {
                                     debug!("Exit from reconnection loop");
@@ -199,13 +205,9 @@ impl UdpTransport {
         })
     }
 
-    async fn get_next_sequence_nr(&self) -> Result<u8, Whatever> {
-        match self.connection_data.lock().await.as_mut() {
-            Some(data) => {
-                let num = data.sequence_nr;
-                data.sequence_nr = data.sequence_nr.wrapping_add(1);
-                Ok(num)
-            }
+    async fn get_sequence_nr(&self) -> Result<u8, Whatever> {
+        match self.connection_data.lock().await.as_ref() {
+            Some(data) => Ok(data.sequence_nr),
             None => whatever!("Disconnected from knx device, NR"),
         }
     }
@@ -240,7 +242,7 @@ impl UdpTransport {
     }
 
     pub async fn tunnel_req(&self, req: Vec<u8>) -> Result<(), Whatever> {
-        let sequence_nr = self.get_next_sequence_nr().await?;
+        let sequence_nr = self.get_sequence_nr().await?;
         let tunneled_req = TunnelingRequest::new(self.get_communication_channel_id().await?, sequence_nr, req);
         debug!("TunnelingRequest {:?}", tunneled_req);
         let req = tunneled_req.packet();
@@ -254,7 +256,7 @@ impl UdpTransport {
     }
 
     pub async fn set_feature(&self, feature: KnxIpFeature, value: u8) -> Result<(), Whatever> {
-        let sequence_nr = self.get_next_sequence_nr().await?;
+        let sequence_nr = self.get_sequence_nr().await?;
         let req = FeatureSet::new(self.get_communication_channel_id().await?, sequence_nr, feature, value);
         debug!("FeatureSet request {:?}", req);
         let req = req.packet();
@@ -426,7 +428,11 @@ async fn try_connection(socket: Arc<MyUdpSocket>, nat_mode: bool) -> Result<Conn
     Ok(connection)
 }
 
-pub(crate) async fn handle_recv_from_knx_device(socket: Arc<MyUdpSocket>, from_knx_tx: Sender<CEMI>) -> TransportResult<String> {
+pub(crate) async fn handle_recv_from_knx_device(
+    socket: Arc<MyUdpSocket>,
+    from_knx_tx: Sender<CEMI>,
+    connection_data: Arc<Mutex<Option<ConnectionData>>>,
+) -> TransportResult<String> {
     loop {
         let mut data = vec![0; 100];
         let count = socket.recv(&mut data).await.map_err(|e| format!("UPD Socket was closed {:?}", e))?;
@@ -455,7 +461,16 @@ pub(crate) async fn handle_recv_from_knx_device(socket: Arc<MyUdpSocket>, from_k
                         Err(e) => whatever!("Unable to pass received request from knx device, {:?}", e),
                     };
                 }
-                TunnelingResponse::TunnelingAck(_) => {}
+                TunnelingResponse::TunnelingAck(ack) => {
+                    if ack.status == 0 {
+                        debug!("Packet with sequence number {0} was ack", ack.sequence_nr);
+                        if let Some(d) = connection_data.lock().await.as_mut() {
+                            d.increment_sequence_nr(ack.sequence_nr)
+                        }
+                    } else {
+                        warn!("Packet with sequence number {0} was NOT ack with status {1}", ack.sequence_nr, ack.status)
+                    }
+                }
                 TunnelingResponse::FeatureResponse(resp) => {
                     let ack = TunnelingAck::new(resp.communication_channel_id, resp.sequence_nr, 0);
 

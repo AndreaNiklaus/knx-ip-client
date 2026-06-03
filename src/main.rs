@@ -1,7 +1,7 @@
 use knx_ip_client::{
     dp_types::{Pdt, PdtKnxBit},
     packets::addresses::KnxAddress,
-    transport::udp::UdpClient,
+    transport::{udp::UdpClient, udp_monitor::UdpMonitor},
 };
 use log::info;
 use snafu::Whatever;
@@ -96,13 +96,15 @@ async fn main() -> Result<(), Whatever> {
     // info!("Request disconnection");
     // client.disconnect().await?;
 
-    let client = Arc::new(UdpClient::connect_with_nat_mode("emerald43.internet-box.ch:13672", true).await?);
+    let client = Arc::new(UdpMonitor::connect_with_nat_mode("emerald43.internet-box.ch:13672", true).await?);
     sleep(Duration::from_secs(2));
     let toggle_off = PdtKnxBit::switch(false);
     let resp = client
         .write_group_address_value(KnxAddress::try_from("1/1/4").unwrap(), toggle_off.get_bytes(), true)
         .await;
     info!("Write 1: {:?}", resp);
+    sleep(Duration::from_secs(2));
+    client.disconnect().await.expect("Unable to close connection");
 
     Ok(())
 }
