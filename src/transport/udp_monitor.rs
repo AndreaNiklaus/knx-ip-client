@@ -89,9 +89,9 @@ impl UdpMonitorTransport {
                         let connection = connect(socket.clone(), nat_mode).await;
                         let communication_channel_id = connection.get_communication_channel_id();
 
-                        if enable_busmonitor(&socket, communication_channel_id).await.is_err() {
-                            continue;
-                        }
+                        // if enable_busmonitor(&socket, communication_channel_id).await.is_err() {
+                        //     continue;
+                        // }
 
                         info!("Created communication channel ID {:?}", communication_channel_id);
                         let mut connection_data = connection_data.lock().await;
