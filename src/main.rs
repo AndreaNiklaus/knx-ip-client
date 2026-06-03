@@ -1,10 +1,10 @@
 use knx_ip_client::{
-    dp_types::{Pdt, PdtKnxB1U3, PdtKnxBit, PdtKnxFloat, PdtKnxScaledValue},
+    dp_types::{Pdt, PdtKnxBit},
     packets::addresses::KnxAddress,
-    transport::{udp::UdpClient, udp_monitor::UdpMonitor},
+    transport::udp::UdpClient,
 };
-use log::{info, warn};
-use snafu::{ResultExt, Whatever};
+use log::info;
+use snafu::Whatever;
 use std::{sync::Arc, thread::sleep, time::Duration};
 
 #[tokio::main]
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Whatever> {
     sleep(Duration::from_secs(2));
     let toggle_off = PdtKnxBit::switch(false);
     let resp = client
-        .write_group_address_value(KnxAddress::try_from("1/1/0").unwrap(), toggle_off.get_bytes(), true)
+        .write_group_address_value(KnxAddress::try_from("1/1/4").unwrap(), toggle_off.get_bytes(), true)
         .await;
     info!("Write 1: {:?}", resp);
 

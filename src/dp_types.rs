@@ -90,7 +90,9 @@ impl Pdt<i16> for PdtKnxInt {
         Self: Sized,
     {
         let mut reader = Cursor::new(b);
-        let value = reader.read_i16::<BigEndian>().with_whatever_context(|e| "Unable to get first byte {e}")?;
+        let value = reader
+            .read_i16::<BigEndian>()
+            .with_whatever_context(|e| format!("Unable to get first byte {e}"))?;
         Ok(Self {
             code: "8.x".to_string(),
             unit: "".to_string(),
@@ -292,7 +294,7 @@ impl Pdt<u8> for PdtKnxByte {
     where
         Self: Sized,
     {
-        let value = *b.get(0).with_whatever_context(|| "One byte is needes")?;
+        let value = *b.first().with_whatever_context(|| "One byte is needes")?;
         Ok(Self {
             code: "20.x".to_string(),
             value,
@@ -330,7 +332,7 @@ impl Pdt<u16> for PdtKnxWord {
         Self: Sized,
     {
         let mut reader = Cursor::new(b);
-        let value = reader.read_u16::<BigEndian>().with_whatever_context(|e| "Unable to get 2 bytes {e}")?;
+        let value = reader.read_u16::<BigEndian>().with_whatever_context(|e| format!("Unable to get 2 bytes {e}"))?;
         Ok(Self {
             code: "7.x".to_string(),
             value,
@@ -368,7 +370,7 @@ impl Pdt<u32> for PdtKnxULong {
         Self: Sized,
     {
         let mut reader = Cursor::new(b);
-        let value = reader.read_u32::<BigEndian>().with_whatever_context(|e| "Unable to get 4 bytes {e}")?;
+        let value = reader.read_u32::<BigEndian>().with_whatever_context(|e| format!("Unable to get 4 bytes {e}"))?;
         Ok(Self {
             code: "8.x".to_string(),
             value,
@@ -398,7 +400,7 @@ impl Pdt<bool> for PdtKnxBit {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Whatever> {
-        let value = bytes.get(0).with_whatever_context(|| "Should have at least one byte")? > &0;
+        let value = bytes.first().with_whatever_context(|| "Should have at least one byte")? > &0;
         Ok(Self {
             code: "1.x".to_string(),
             value,
@@ -436,7 +438,7 @@ impl Pdt<u8> for PdtKnxB1U3 {
     }
 
     fn get_bytes(&self) -> Vec<u8> {
-        vec![self.get_value() as u8]
+        vec![self.get_value()]
     }
 
     fn general(value: u8) -> Self {
@@ -451,7 +453,7 @@ impl Pdt<u8> for PdtKnxB1U3 {
     where
         Self: Sized,
     {
-        let value = b.get(0).with_whatever_context(|| "Should have at least one byte")?;
+        let value = b.first().with_whatever_context(|| "Should have at least one byte")?;
         Ok(Self {
             code: "0.x".to_string(),
             bit: (value & 8) > 0,

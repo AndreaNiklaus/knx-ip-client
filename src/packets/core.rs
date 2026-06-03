@@ -490,7 +490,7 @@ impl DisconnectRequest {
     }
 
     pub fn from_packet(packet_reader: &mut Cursor<&[u8]>) -> Result<Self, Whatever> {
-        let header_size = match packet_reader.read_u8() {
+        let _header_size = match packet_reader.read_u8() {
             Ok(header_size) => {
                 ensure_whatever!(header_size >= 8, "Header size should be at least 8 instead of {}", header_size);
                 header_size
@@ -1350,7 +1350,7 @@ mod tests {
         packet.extend_from_slice(&[0x45, 0x49, 0x42, 0x6E, 0x65, 0x74]);
 
         // Device Friendly Name
-        packet.extend_from_slice(&[b'M', b'Y', b'H', b'O', b'M', b'E', b'\n']);
+        packet.extend_from_slice(b"MYHOME\n");
         // Device Friendly Name Padding (total 30 bytes)
         packet.append(&mut vec![0x00; 23]);
 

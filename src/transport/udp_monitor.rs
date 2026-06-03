@@ -86,7 +86,6 @@ impl UdpMonitorTransport {
             let socket = socket.clone();
             let connection_data = connection_data.clone();
             let on_connection = on_connection.clone();
-            let nat_mode = nat_mode;
 
             async move {
                 // Interval should be 60 seconds as stated in

@@ -1,6 +1,5 @@
 use crate::packets::core::{SearchRequest, SearchResponse, DISCOVERY_ENDPOINT_PORT, SYSTEM_MULTICAST_ADDRESS};
 use crate::packets::tunneling::{FeatureResp, FeatureSet};
-use crate::transport;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io::Cursor, net::SocketAddr};
@@ -129,7 +128,6 @@ impl UdpTransport {
         tokio::spawn({
             let socket = socket.clone();
             let connection_data = connection_data.clone();
-            let nat_mode = nat_mode;
 
             async move {
                 // Interval should be 60 seconds as stated in
@@ -168,7 +166,7 @@ impl UdpTransport {
                             _ = heart_beat.tick() => {
                                 info!("Send connection heart beat");
                                 match connection_data.lock().await.as_ref() {
-                                    Some(&ref data) => {
+                                    Some(data) => {
                                         let req = ConnectionstateRequest::new(
                                             data.communication_channel_id,
                                             data.control_endpoint.clone(),
@@ -352,13 +350,13 @@ pub fn parse_response(resp: Vec<u8>) -> Result<TunnelingResponse, Whatever> {
             let resp = DisconnectResponse::from_packet(&mut resp_cursor)?;
             debug!("Parsed disconnect response {:?}", resp);
             Ok(TunnelingResponse::DisconnectResponse(resp))
-        } else if response_code == Some(&vec![0x02, 0x08]) {
+        } else if response_code == Some(&[0x02, 0x08]) {
             debug!("Received connection state response");
             let mut resp_cursor = Cursor::new(resp.as_slice());
             let resp = ConnectionstateResponse::from_packet(&mut resp_cursor)?;
             debug!("Parsed connection state response {:?}", resp);
             Ok(TunnelingResponse::ConnectionstateResponse(resp))
-        } else if response_code == Some(&vec![0x02, 0x09]) {
+        } else if response_code == Some(&[0x02, 0x09]) {
             debug!("Received disconnect request");
             let mut resp_cursor = Cursor::new(resp.as_slice());
             let resp = DisconnectRequest::from_packet(&mut resp_cursor)?;
@@ -495,7 +493,11 @@ pub struct UdpClient {
 
 impl UdpClient {
     pub async fn connect<A: ToSocketAddrs + std::fmt::Debug>(addr: A) -> Result<Self, Whatever> {
-        let transport = Arc::new(Mutex::new(UdpTransport::connect(addr, false).await?));
+        Self::connect_with_nat_mode(addr, false).await
+    }
+
+    pub async fn connect_with_nat_mode<A: ToSocketAddrs + std::fmt::Debug>(addr: A, nat_mode: bool) -> Result<Self, Whatever> {
+        let transport = Arc::new(Mutex::new(UdpTransport::connect(addr, nat_mode).await?));
 
         Ok(Self {
             transport,
@@ -509,11 +511,11 @@ impl UdpClient {
     }
 
     fn get_read_timeout(&self) -> Duration {
-        self.timeout.clone()
+        self.timeout
     }
 
     fn get_write_timeout(&self) -> Duration {
-        self.timeout.clone()
+        self.timeout
     }
 
     pub async fn get_connection_status(&self) -> TransportResult<ConnectionstateResponse> {
@@ -575,7 +577,7 @@ impl UdpClient {
                     debug!("Parsed confirmation cEMI {:?}", data_con);
                     return Ok(());
                 }
-                Ok(Some(cemi)) => whatever!("Unknown cEMI message code {:?}", cemi.msg_code),
+                Ok(Some(cemi)) => warn!("Unknown cEMI message code {:?}", cemi.msg_code),
                 Ok(None) => whatever!("No more data will be received from client"),
                 Err(_) => whatever!("Write request timed out"),
             }
